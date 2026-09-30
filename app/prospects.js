@@ -327,7 +327,7 @@ function DetailsForm({ p, data }) {
     e.preventDefault();
     setErr('');
     const norm = normalizeLinkedIn(v.url);
-    if (!norm) { setErr('That LinkedIn URL is not valid. Use a linkedin.com/in/… link.'); return; }
+    if (!norm) { setErr(checkLinkedIn(v.url).error); return; }
     if (!v.firstName.trim()) { setErr('First name is required.'); return; }
     const patch = { firstName: v.firstName.trim(), lastName: v.lastName.trim(), title: v.title.trim(), company: v.company.trim(), location: v.location.trim(), email: v.email.trim(), tags: v.tags.split(',').map(t => t.trim()).filter(Boolean), notes: v.notes.trim() };
     if (norm.key !== p.urlKey) {
@@ -465,7 +465,7 @@ function AddProspectModal({ clientId }) {
     if (e) e.preventDefault();
     setErr('');
     if (!v.clientId) { setErr('Choose a client.'); return; }
-    if (!norm) { setErr('Paste a LinkedIn profile URL, like linkedin.com/in/jane-doe.'); return; }
+    if (!norm) { setErr(checkLinkedIn(v.url).error); return; }
     if (dup) { setErr(fullName(dup) + ' is already a prospect for this client.'); return; }
     const nm = nameFromSlug(norm.slug);
     const first = v.firstName.trim() || nm.firstName;
@@ -496,7 +496,7 @@ function AddProspectModal({ clientId }) {
     <form id="add-form" class="stack" onSubmit=${e => submit(e, false)}>
       <label class="field"><span>LinkedIn URL</span>
         <input id="a-url" class="input" data-autofocus placeholder="https://www.linkedin.com/in/jane-doe" value=${v.url} onInput=${set('url')} onBlur=${onUrlBlur} />
-        ${v.url && !norm && html`<span class="err">Not a LinkedIn profile URL yet.</span>`}
+        ${v.url && !norm && html`<span class="err">${checkLinkedIn(v.url).error}</span>`}
         ${dup && html`<span class="err">Already a prospect for this client (${(STATUSES[dup.status] || {}).label}).</span>`}
         ${elsewhere.length > 0 && html`<span class="hint">Also a prospect for ${elsewhere.map(o => (data.clients[o.clientId] || {}).name).join(', ')}.</span>`}
         ${norm && norm.kind === 'salesnav' && html`<span class="hint">Sales Navigator link: it opens in Sales Navigator for whoever has a seat.</span>`}
@@ -534,7 +534,11 @@ function parsePastedLines(text) {
     if (!raw) return;
     const cells = (raw.indexOf('\t') !== -1 ? raw.split('\t') : raw.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/)).map(c => c.trim().replace(/^"|"$/g, ''));
     const ui = cells.findIndex(c => normalizeLinkedIn(c));
-    if (ui === -1) { out.push({ line: i + 1, raw, error: 'No LinkedIn profile URL found' }); return; }
+    if (ui === -1) {
+      const guess = cells.find(c => /linkedin|lnkd|https?:|www\./i.test(c)) || cells[0];
+      out.push({ line: i + 1, raw, error: checkLinkedIn(guess).error });
+      return;
+    }
     const rest = cells.filter((c, j) => j !== ui && c);
     const row = { url: cells[ui] };
     if (rest[0]) row.fullName = rest[0];
@@ -548,10 +552,11 @@ function buildImportRows(items, opts, data) {
   const seen = new Set();
   const results = [];
   for (const it of items) {
-    if (it.error) { results.push({ status: 'invalid', reason: it.error, line: it.line }); continue; }
+    if (it.error) { results.push({ status: 'invalid', reason: it.error, line: it.line, raw: it.raw }); continue; }
     const r = it.row;
-    const norm = normalizeLinkedIn(r.url);
-    if (!norm) { results.push({ status: 'invalid', reason: 'Not a LinkedIn profile URL', line: it.line }); continue; }
+    const chk = checkLinkedIn(r.url);
+    const norm = chk.ok ? chk : null;
+    if (!norm) { results.push({ status: 'invalid', reason: chk.error, line: it.line, raw: String(r.url || '') }); continue; }
     if (seen.has(norm.key)) { results.push({ status: 'dupe', reason: 'Listed twice', line: it.line }); continue; }
     seen.add(norm.key);
     const existing = findProspect(opts.clientId, prospectDocId(norm.key));
@@ -679,6 +684,9 @@ function BulkAddModal({ clientId }) {
         ${tally.noname > 0 && html`<span class="pill tone-overdue">${tally.noname} without a name (skipped)</span>`}
         ${tally.elsewhere > 0 && html`<span class="pill tone-today">${tally.elsewhere} also prospects of another client</span>`}
       </div>
+      ${tally.invalid > 0 && html`<div class="note-box bad"><strong>Skipped: not real LinkedIn profile links</strong>
+        <ul class="bad-list">${results.filter(r => r.status === 'invalid').slice(0, 8).map(r => html`<li key=${r.line}><span class="mono">Line ${r.line}</span> ${r.raw ? html`<span class="mono muted">${String(r.raw).slice(0, 60)}</span>` : ''} · ${r.reason}</li>`)}</ul>
+        ${tally.invalid > 8 && html`<span class="muted">…and ${tally.invalid - 8} more.</span>`}</div>`}
       ${daysNeeded > 1 && html`<p class="soft" style="font-size:13px">At ${perDay.dailyInvites} invites a day for ${perDay.name}, these invites spread over about ${daysNeeded} working days. The Today list paces them for you.</p>`}
       <div class="preview-table"><table>
         <thead><tr><th>Name</th><th>Company</th><th>Headline</th><th>LinkedIn</th></tr></thead>

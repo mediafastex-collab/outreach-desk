@@ -20,6 +20,7 @@ const MODALS = {
   lists: p => html`<${ListsModal} clientId=${p.clientId} />`,
   setList: p => html`<${SetListModal} ps=${p.ps} />`,
   find: () => html`<${QuickFind} />`,
+  people: () => html`<${PeopleModal} />`,
 };
 
 /* Ctrl/Cmd+K: jump to any prospect, client or screen. */

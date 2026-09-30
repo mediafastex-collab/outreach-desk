@@ -260,34 +260,54 @@ function validateSequence(seq) {
 }
 
 /* ---------- LinkedIn URLs & names ---------- */
-function normalizeLinkedIn(raw) {
-  let s = String(raw || '').trim().replace(/^<|>$/g, '');
-  if (!s) return null;
+/* Strict check: only real LinkedIn person links pass (profile /in/…, legacy /pub/…, Sales Navigator lead).
+   Returns { ok: true, url, key, slug, kind } or { ok: false, error }. */
+const LI_SLUG = /^[\p{L}\p{N}][\p{L}\p{N}_\-]{2,99}$/u;
+function checkLinkedIn(raw) {
+  let s = String(raw || '').trim().replace(/^<|>$/g, '').replace(/^["']|["']$/g, '');
+  if (!s) return { ok: false, error: 'Paste the LinkedIn profile URL.' };
+  if (/\s/.test(s)) return { ok: false, error: 'A LinkedIn URL has no spaces. Copy it from the browser address bar.' };
+  if (/^[^/]+@[^/]+\.[a-z]+$/i.test(s)) return { ok: false, error: 'That looks like an email address, not a LinkedIn profile URL.' };
   if (!/^https?:\/\//i.test(s)) {
     if (/^([a-z]{2,3}\.|www\.)?linkedin\.com\//i.test(s)) s = 'https://' + s;
+    else if (/^lnkd\.in\//i.test(s)) s = 'https://' + s;
     else if (/^\/?(in|pub)\//i.test(s)) s = 'https://www.linkedin.com/' + s.replace(/^\//, '');
-    else return null;
+    else return { ok: false, error: 'This is not a LinkedIn URL. Use a profile link like https://www.linkedin.com/in/jane-doe' };
   }
   let u;
-  try { u = new URL(s); } catch (e) { return null; }
-  if (!/(^|\.)linkedin\.com$/i.test(u.hostname)) return null;
+  try { u = new URL(s); } catch (e) { return { ok: false, error: 'That URL is not valid.' }; }
+  const host = u.hostname.toLowerCase();
+  if (host === 'lnkd.in') return { ok: false, error: 'Short lnkd.in links can\'t be checked. Open it and copy the full profile URL.' };
+  if (!/^(www\.|[a-z]{2}\.)?linkedin\.com$/.test(host)) return { ok: false, error: 'Only linkedin.com links are allowed here, not ' + host + '.' };
   const path = u.pathname.replace(/\/+$/, '');
   let m = path.match(/^\/in\/([^/]+)/i);
   if (m) {
     const slug = decodeSafe(m[1]).toLowerCase();
-    if (!slug) return null;
-    return { url: 'https://www.linkedin.com/in/' + encodeURIComponent(slug) + '/', key: 'in:' + slug, slug, kind: 'profile' };
+    if (!LI_SLUG.test(slug)) return { ok: false, error: 'The profile part "' + slug + '" does not look like a real LinkedIn profile name.' };
+    return { ok: true, url: 'https://www.linkedin.com/in/' + encodeURIComponent(slug) + '/', key: 'in:' + slug, slug, kind: 'profile' };
   }
-  m = path.match(/^\/pub\/([^/]+)((?:\/[^/]+)*)/i);
+  m = path.match(/^\/pub\/([^/]+)((?:\/[a-z0-9]+){0,3})$/i);
   if (m) {
     const slug = decodeSafe(m[1]).toLowerCase();
+    if (!LI_SLUG.test(slug)) return { ok: false, error: 'That old-style /pub/ link does not look like a real profile.' };
     const rest = (m[2] || '').toLowerCase();
-    return { url: 'https://www.linkedin.com/pub/' + encodeURIComponent(slug) + rest + '/', key: 'pub:' + slug + rest, slug, kind: 'profile' };
+    return { ok: true, url: 'https://www.linkedin.com/pub/' + encodeURIComponent(slug) + rest + '/', key: 'pub:' + slug + rest, slug, kind: 'profile' };
   }
-  m = path.match(/^\/sales\/(?:lead|people)\/([^/,]+)/i);
-  if (m) return { url: 'https://www.linkedin.com' + u.pathname, key: 'sn:' + m[1], slug: '', kind: 'salesnav' };
-  return null;
+  m = path.match(/^\/sales\/(?:lead|people)\/([A-Za-z0-9_\-]{10,})(?:,[^/]*)?$/);
+  if (m) return { ok: true, url: 'https://www.linkedin.com' + u.pathname, key: 'sn:' + m[1], slug: '', kind: 'salesnav' };
+  const seg = (path.split('/')[1] || '').toLowerCase();
+  const why = {
+    company: 'That is a company page. Add the person\'s own profile (linkedin.com/in/…).',
+    school: 'That is a school page, not a person.', showcase: 'That is a showcase page, not a person.',
+    feed: 'That is a post, not a profile. Open the author\'s profile and copy that URL.', posts: 'That is a post, not a profile. Open the author\'s profile and copy that URL.',
+    pulse: 'That is an article, not a profile.', jobs: 'That is a job listing, not a profile.', groups: 'That is a group, not a person.',
+    events: 'That is an event page, not a person.', search: 'That is a search results page. Open the person and copy their profile URL.',
+    mynetwork: 'That is your network page. Open the person and copy their profile URL.', messaging: 'That is a message thread. Open the person\'s profile and copy that URL.',
+    sales: 'Use a Sales Navigator lead link (…/sales/lead/…) or the person\'s linkedin.com/in/ URL.',
+  }[seg];
+  return { ok: false, error: why || 'Only LinkedIn profile links work here (linkedin.com/in/…).' };
 }
+function normalizeLinkedIn(raw) { const r = checkLinkedIn(raw); return r.ok ? r : null; }
 function titleCase(w) { return w ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : ''; }
 function nameFromSlug(slug) {
   const words = decodeSafe(String(slug || '')).split(/[-_.]+/)

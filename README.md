@@ -17,6 +17,13 @@ python3 -m http.server 5178 --directory app
 
 Then open http://localhost:5178.
 
+## First-time setup
+
+1. **Settings → Account managers & team**: add your account managers and the people who run LinkedIn accounts.
+2. **Clients → Add client**: name, account manager, and the LinkedIn account(s) you send from.
+3. **Sequences**: adjust the default cadence or create one per client.
+4. **Prospects → Add in bulk**: paste LinkedIn profile URLs or import a CSV. Only real LinkedIn profile links are accepted.
+
 ## Daily routine
 
 1. **Check acceptances** for each LinkedIn account (Today → Pending invites → Check acceptances).
@@ -40,5 +47,4 @@ Default sequence: connection request → Message 1 when they accept → Message 
 | `setup.js` | Clients, sequences, settings |
 | `reports.js` | Reports and charts |
 | `activity.js` | Activity feed with date, time and type of every action |
-| `sample.js` | In-memory sample workspace |
 | `ui.js`, `actions.js`, `main.js` | Shared components, actions with undo, app shell |

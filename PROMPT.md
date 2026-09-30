@@ -172,6 +172,12 @@ No automation, scraping or LinkedIn login. No deal pipeline, invoicing or email 
 - **Activity with type, date and time.** Every logged action is stored with its timestamp and who logged it. Prospects show their last activity; each prospect's history and a team-wide Activity screen show type, date and time, with filters and CSV export.
 - **Smoother use.** Ctrl/Cmd+K quick find, light/dark/auto theme switch, grouped schedule, list and sequence shortcuts on client cards.
 
+## Additions (round 3)
+
+- **No sample or test data.** The app starts empty; the team enters its own clients and prospects.
+- **Account manager master.** One list of people with roles (account manager, runs LinkedIn accounts). Add, rename or remove from Settings or the Clients screen, or add a new manager straight from the client form. Removing someone unassigns their clients and accounts but keeps their past activity.
+- **Strict LinkedIn URLs.** Only real person links are accepted: linkedin.com/in/… profiles (any country subdomain), legacy /pub/ links and Sales Navigator lead links. Company pages, posts, jobs, search pages, short lnkd.in links, other websites and emails are rejected with a reason, in single add, bulk paste, CSV import, editing, and sender accounts.
+
 ## Deliverables
 
 The working app, a short daily routine inside the app, and a list of assumptions made.

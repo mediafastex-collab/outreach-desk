@@ -322,11 +322,30 @@ function ClientSelect({ value, onChange, data, all, allLabel, id, cls, includeIn
     ${list.map(c => html`<option key=${c.id} value=${c.id} selected=${value === c.id}>${c.name}${c.status === 'paused' ? ' (paused)' : c.status === 'archived' ? ' (archived)' : ''}</option>`)}
   </select>`;
 }
-function MemberSelect({ value, onChange, settings, all, allLabel, noneLabel, id, cls }) {
+/* People master. Roles: 'manager' (account manager of clients), 'operator' (runs LinkedIn accounts).
+   Older entries without roles count as both. */
+const ROLE_LABELS = { manager: 'Account manager', operator: 'Runs LinkedIn accounts' };
+function hasRole(m, role) { return !role || !Array.isArray(m.roles) || m.roles.indexOf(role) !== -1; }
+function peopleWith(settings, role) { return (settings.team || []).filter(m => hasRole(m, role)).sort((a, b) => byText(a.name, b.name)); }
+function MemberSelect({ value, onChange, settings, all, allLabel, noneLabel, id, cls, role, allowNew }) {
+  const list = peopleWith(settings, role);
+  const current = value && !list.some(m => m.id === value) ? (settings.team || []).find(m => m.id === value) : null;
   return html`<select id=${id} class=${cls || 'select'} value=${value || ''} onChange=${e => onChange(e.target.value)}>
     ${all ? html`<option value="" selected=${!value}>${allLabel || 'Everyone'}</option>` : html`<option value="" selected=${!value}>${noneLabel || 'Not assigned'}</option>`}
-    ${(settings.team || []).map(m => html`<option key=${m.id} value=${m.id} selected=${value === m.id}>${m.name}</option>`)}
+    ${list.map(m => html`<option key=${m.id} value=${m.id} selected=${value === m.id}>${m.name}</option>`)}
+    ${current && html`<option value=${current.id} selected=${true}>${current.name}</option>`}
+    ${allowNew && html`<option value="__new">+ Add ${role === 'manager' ? 'account manager' : 'person'}…</option>`}
   </select>`;
+}
+/* Adds a person to the master and returns them. */
+async function addPerson(name, roles) {
+  const n = String(name || '').trim();
+  if (!n || !W.guard()) return null;
+  const s = currentData().settings;
+  if ((s.team || []).some(m => m.name.toLowerCase() === n.toLowerCase())) { UI.toast(n + ' is already on the team.', { bad: true }); return (s.team || []).find(m => m.name.toLowerCase() === n.toLowerCase()); }
+  const m = { id: uid('m'), name: n, roles: roles && roles.length ? roles : ['manager', 'operator'], createdAt: nowTs() };
+  const ok = await W.saveSettings({ team: (s.team || []).concat(m) });
+  return ok ? m : null;
 }
 function SequenceSelect({ value, onChange, data, clientId, id, cls, allowEmpty }) {
   const list = Object.values(data.seqs).filter(s => !s.archived && (!s.clientId || !clientId || s.clientId === clientId || s.id === value)).sort((a, b) => byText(a.name, b.name));

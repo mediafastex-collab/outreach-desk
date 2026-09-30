@@ -2,7 +2,7 @@
    Storage backends and live datasets:
    - cloud: the artifact's shared database (everyone with edit access sees the same data, live)
    - local: this browser only (used when the page is opened as a plain file)
-   - demo:  in-memory sample data, never saved anywhere */
+   The app always starts empty: there is no sample or test data. */
 'use strict';
 
 function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
@@ -218,7 +218,6 @@ function maybeDecideDemo() {
   const decide = () => {
     if (Store.decided) return;
     Store.decided = true;
-    if (Object.keys(r.clients).length === 0 && !pref('demoDismissed')) enterDemo(true);
     bump();
   };
   if (definitive) decide();
@@ -227,7 +226,7 @@ function maybeDecideDemo() {
 
 function enterDemo(auto) {
   if (Store.demo) Store.demo.stop();
-  Store.demo = Dataset(LocalBackend({ key: 'demo', persist: false, seed: buildSampleDocs(todayISO()) }), onDatasetChange);
+  Store.demo = Dataset(LocalBackend({ key: 'demo', persist: false, seed: {} }), onDatasetChange);
   Store.demo.start();
   Store.demoOn = true;
   Store.demoAuto = !!auto;

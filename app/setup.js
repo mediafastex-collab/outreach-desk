@@ -102,7 +102,9 @@ function ClientsView() {
     <header class="page-head">
       <div><p class="eyebrow">${plural(live.length, 'client')} · ${plural(senders, 'LinkedIn account')}</p><h1>Clients</h1>
         <p class="lede">Each client has one or more LinkedIn accounts you send from. Daily and weekly invite limits keep those accounts safe.</p></div>
-      <div class="head-actions"><button type="button" class="btn primary" onClick=${() => UI.open('client', {})}><${Icon} n="plus" s=${14} />Add client</button></div>
+      <div class="head-actions">
+        <button type="button" class="btn" onClick=${() => UI.open('people', {})}><${Icon} n="users" s=${14} />Account managers</button>
+        <button type="button" class="btn primary" onClick=${() => UI.open('client', {})}><${Icon} n="plus" s=${14} />Add client</button></div>
     </header>
     ${live.length === 0 ? html`<div class="panel"><${Empty} icon="briefcase" title="No clients yet"
         action=${html`<button type="button" class="btn primary" onClick=${() => UI.open('client', {})}><${Icon} n="plus" s=${14} />Add client</button>`}>
@@ -126,6 +128,7 @@ function ClientModal({ id }) {
   });
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+  const [newMgr, setNewMgr] = useState(null);
   const set = k => e => setV(Object.assign({}, v, { [k]: e.target.value }));
   const setSender = (i, k) => e => { const s = v.senders.slice(); s[i] = Object.assign({}, s[i], { [k]: e.target.value }); setV(Object.assign({}, v, { senders: s })); };
   const inUse = sid => data.prospects.filter(p => p.clientId === v.id && p.senderId === sid).length;
@@ -136,10 +139,12 @@ function ClientModal({ id }) {
     const name = String(v.name || '').trim();
     if (!name) { setErr('Give the client a name.'); return; }
     const senders = (v.senders || []).map(s => Object.assign({}, s, {
-      name: String(s.name || '').trim(), url: s.url ? ((normalizeLinkedIn(s.url) || {}).url || String(s.url).trim()) : '',
+      name: String(s.name || '').trim(), url: s.url && normalizeLinkedIn(s.url) ? normalizeLinkedIn(s.url).url : '',
       dailyInvites: Math.max(0, parseInt(s.dailyInvites, 10) || 0), weeklyInvites: Math.max(0, parseInt(s.weeklyInvites, 10) || 0), dailyMessages: Math.max(0, parseInt(s.dailyMessages, 10) || 0),
     })).filter(s => s.name);
     if (!senders.length) { setErr('Add at least one LinkedIn account with a name, e.g. the founder you send as.'); return; }
+    const badUrl = (v.senders || []).find(x => String(x.url || '').trim() && !normalizeLinkedIn(x.url));
+    if (badUrl) { setErr((badUrl.name || 'An account') + ': ' + checkLinkedIn(badUrl.url).error); return; }
     if (!W.guard()) return;
     setBusy(true);
     let seqId = v.defaultSequenceId;
@@ -157,7 +162,10 @@ function ClientModal({ id }) {
     <form id="client-form" class="stack" onSubmit=${save}>
       <div class="fields">
         <label class="field"><span>Client name</span><input id="c-name" class="input" data-autofocus placeholder="Acme Analytics" value=${v.name} onInput=${set('name')} /></label>
-        <label class="field"><span>Account manager</span><${MemberSelect} id="c-owner" settings=${data.settings} value=${v.ownerId} onChange=${x => setV(Object.assign({}, v, { ownerId: x }))} /></label>
+        <label class="field"><span>Account manager</span><${MemberSelect} id="c-owner" role="manager" allowNew=${true} settings=${data.settings} value=${newMgr !== null ? '__new' : v.ownerId} onChange=${x => { if (x === '__new') setNewMgr(''); else { setNewMgr(null); setV(Object.assign({}, v, { ownerId: x })); } }} />
+          ${newMgr !== null && html`<div class="team-row" style="margin-top:6px"><input id="c-newmgr" class="input sm" data-autofocus placeholder="Account manager's name" value=${newMgr} onInput=${e => setNewMgr(e.target.value)} />
+            <button type="button" class="btn sm" disabled=${!newMgr.trim()} onClick=${async () => { const m = await addPerson(newMgr, ['manager']); if (m) { setV(Object.assign({}, v, { ownerId: m.id })); setNewMgr(null); } }}>Add</button>
+            <button type="button" class="btn sm ghost" onClick=${() => setNewMgr(null)}>Cancel</button></div>`}</label>
         <label class="field"><span>Default sequence</span><${SequenceSelect} id="c-seq" data=${data} clientId=${v.id} value=${v.defaultSequenceId} allowEmpty=${Object.keys(data.seqs).length ? '' : 'Standard 4-step (created on save)'} onChange=${x => setV(Object.assign({}, v, { defaultSequenceId: x }))} /></label>
         <div class="field"><span>Color</span><div class="swatches">
           ${Array.from({ length: CLIENT_COLORS }, (_, i) => html`<button type="button" key=${i} class=${'swatch c' + i} style="background:var(--c${i}-fg)" aria-label=${'Color ' + (i + 1)} aria-pressed=${(v.colorIdx | 0) === i ? 'true' : 'false'} onClick=${() => setV(Object.assign({}, v, { colorIdx: i }))}></button>`)}
@@ -170,7 +178,7 @@ function ClientModal({ id }) {
         ${v.senders.map((s, i) => html`<div class="sender-edit" key=${s.id}>
           <label class="field"><span>Name</span><input id=${'s-name-' + i} class="input sm" placeholder="Jane Founder" value=${s.name} onInput=${setSender(i, 'name')} /></label>
           <label class="field"><span>Profile URL</span><input id=${'s-url-' + i} class="input sm" placeholder="linkedin.com/in/…" value=${s.url} onInput=${setSender(i, 'url')} /></label>
-          <label class="field"><span>Run by</span><${MemberSelect} id=${'s-owner-' + i} cls="select sm" settings=${data.settings} value=${s.ownerId} onChange=${x => setSender(i, 'ownerId')({ target: { value: x } })} /></label>
+          <label class="field"><span>Run by</span><${MemberSelect} id=${'s-owner-' + i} cls="select sm" role="operator" settings=${data.settings} value=${s.ownerId} onChange=${x => setSender(i, 'ownerId')({ target: { value: x } })} /></label>
           <label class="field"><span>Invites/day</span><input id=${'s-d-' + i} class="input sm" type="number" min="0" value=${s.dailyInvites} onInput=${setSender(i, 'dailyInvites')} /></label>
           <label class="field"><span>Invites/week</span><input id=${'s-w-' + i} class="input sm" type="number" min="0" value=${s.weeklyInvites} onInput=${setSender(i, 'weeklyInvites')} /></label>
           <label class="field"><span>Msgs/day</span><input id=${'s-m-' + i} class="input sm" type="number" min="0" value=${s.dailyMessages} onInput=${setSender(i, 'dailyMessages')} /></label>
@@ -436,6 +444,76 @@ function SequencesView() {
   </div>`;
 }
 
+/* ---------- people master (account managers & team) ---------- */
+function PeopleEditor() {
+  const data = currentData();
+  const s = data.settings;
+  const [name, setName] = useState('');
+  const [role, setRole] = useState('manager');
+  const team = (s.team || []).slice().sort((a, b) => byText(a.name, b.name));
+  const clientsOf = id => Object.values(data.clients).filter(c => c.ownerId === id);
+  const accountsOf = id => Object.values(data.clients).reduce((n, c) => n + (c.senders || []).filter(x => x.ownerId === id).length, 0);
+  const saveTeam = next => W.guard() && W.saveSettings({ team: next });
+  const rename = (m, n) => { const v = n.trim(); if (v && v !== m.name) saveTeam(s.team.map(x => (x.id === m.id ? Object.assign({}, x, { name: v }) : x))).then(ok => ok && UI.toast('Renamed to ' + v + '.')); };
+  const toggleRole = (m, r) => {
+    const roles = Array.isArray(m.roles) ? m.roles.slice() : ['manager', 'operator'];
+    const i = roles.indexOf(r);
+    if (i === -1) roles.push(r); else roles.splice(i, 1);
+    if (!roles.length) { UI.toast('Keep at least one role, or remove the person.', { bad: true }); return; }
+    saveTeam(s.team.map(x => (x.id === m.id ? Object.assign({}, x, { roles }) : x)));
+  };
+  const remove = m => {
+    const cl = clientsOf(m.id), ac = accountsOf(m.id);
+    const go = async () => {
+      if (!W.guard()) return;
+      const touched = Object.values(data.clients).filter(c => c.ownerId === m.id || (c.senders || []).some(x => x.ownerId === m.id));
+      for (const c of touched) {
+        await W.saveClient(Object.assign(clone(c), { ownerId: c.ownerId === m.id ? '' : c.ownerId, senders: (c.senders || []).map(x => (x.ownerId === m.id ? Object.assign({}, x, { ownerId: '' }) : x)), updatedAt: nowTs() }));
+      }
+      if (await saveTeam(s.team.filter(x => x.id !== m.id))) {
+        if (UI.me === m.id) { pref('me', null); UI.me = ''; }
+        UI.toast(m.name + ' removed.' + (touched.length ? ' Their clients and accounts are now unassigned.' : ''));
+      }
+    };
+    if (!cl.length && !ac) { go(); return; }
+    UI.open('confirm', { title: 'Remove ' + m.name + '?', confirmLabel: 'Remove', danger: true, onConfirm: go,
+      body: m.name + ' manages ' + plural(cl.length, 'client') + (ac ? ' and runs ' + plural(ac, 'LinkedIn account') : '') + '. Those will become unassigned. Past activity they logged stays in the history.' });
+  };
+  const add = async e => {
+    e.preventDefault();
+    const roles = role === 'both' ? ['manager', 'operator'] : [role];
+    const m = await addPerson(name, roles);
+    if (m) { setName(''); UI.toast(m.name + ' added.'); }
+  };
+  return html`<div class="stack">
+    ${team.length === 0 ? html`<p class="muted" style="font-size:13px">No one yet. Add your account managers and the people who run LinkedIn accounts.</p>` : html`
+      <div class="people">
+        ${team.map(m => html`<div class="person" key=${m.id}>
+          <input id=${'pm-' + m.id} class="input sm" value=${m.name} aria-label="Name" onBlur=${e => rename(m, e.target.value)} onKeyDown=${e => { if (e.key === 'Enter') e.target.blur(); }} />
+          <label class="check"><input type="checkbox" checked=${hasRole(m, 'manager')} onChange=${() => toggleRole(m, 'manager')} />Account manager</label>
+          <label class="check"><input type="checkbox" checked=${hasRole(m, 'operator')} onChange=${() => toggleRole(m, 'operator')} />Runs LinkedIn accounts</label>
+          <span class="muted num" style="font-size:12px">${plural(clientsOf(m.id).length, 'client')} · ${plural(accountsOf(m.id), 'account')}</span>
+          <button type="button" class="btn sm ghost icon" aria-label=${'Remove ' + m.name} title="Remove" onClick=${() => remove(m)}><${Icon} n="trash" s=${14} /></button>
+        </div>`)}
+      </div>`}
+    <form class="person add" onSubmit=${add}>
+      <input id="pm-new" class="input sm" placeholder="Full name, e.g. Priya Shah" value=${name} onInput=${e => setName(e.target.value)} />
+      <select id="pm-role" class="select sm" value=${role} onChange=${e => setRole(e.target.value)} aria-label="Role">
+        <option value="manager" selected=${role === 'manager'}>Account manager</option>
+        <option value="operator" selected=${role === 'operator'}>Runs LinkedIn accounts</option>
+        <option value="both" selected=${role === 'both'}>Both</option>
+      </select>
+      <button type="submit" class="btn sm primary" disabled=${!name.trim()}><${Icon} n="plus" s=${14} />Add</button>
+    </form>
+  </div>`;
+}
+function PeopleModal() {
+  return html`<${Modal} title="Account managers & team" sub="Add, rename or remove people. Removing someone unassigns their clients; their past activity stays." size="wide"
+    foot=${html`<button type="button" class="btn primary" onClick=${() => UI.close()}>Done</button>`}>
+    <${PeopleEditor} />
+  <//>`;
+}
+
 /* ---------- settings ---------- */
 function backupJSON(data) {
   return JSON.stringify({
@@ -462,25 +540,12 @@ function SettingsView() {
   const data = currentData();
   const s = data.settings;
   const [agency, setAgency] = useState(s.agencyName || '');
-  const [newMember, setNewMember] = useState('');
   useEffect(() => { setAgency(s.agencyName || ''); }, [s.agencyName]);
   const save = patch => W.guard() && W.saveSettings(patch).then(ok => ok && UI.toast('Settings saved.'));
-  const addMember = e => {
-    e.preventDefault();
-    const name = newMember.trim();
-    if (!name) return;
-    const m = { id: uid('m'), name };
-    save({ team: (s.team || []).concat(m) });
-    setNewMember('');
-    if (!UI.me) { UI.me = m.id; pref('me', m.id); }
-  };
-  const renameMember = (id, name) => save({ team: s.team.map(m => (m.id === id ? Object.assign({}, m, { name }) : m)) });
-  const removeMember = id => save({ team: s.team.filter(m => m.id !== id) });
   const toggleDay = d => { const set = new Set(s.workDays || []); if (set.has(d)) set.delete(d); else set.add(d); save({ workDays: Array.from(set).sort() }); };
   const docCount = 1 + Object.keys(data.clients).length + Object.keys(data.seqs).length + data.prospects.length;
   const onRestore = async e => { const f = e.target.files && e.target.files[0]; if (!f) return; restoreBackup(await readFileText(f)); e.target.value = ''; };
-  const storage = Store.demoOn ? 'Sample data in this tab only. Nothing here is saved.'
-    : Store.mode === 'cloud' ? 'Saved in this page\'s shared storage. Everyone you share it with (with edit access) sees the same data, live.'
+  const storage = Store.mode === 'cloud' ? 'Saved in this page\'s shared storage. Everyone you share it with (with edit access) sees the same data, live.'
     : 'Saved in this browser only. Export a backup regularly, or open the published page to share with your team.';
   return html`<div class="page">
     <header class="page-head"><div><p class="eyebrow">${s.agencyName || 'Workspace'}</p><h1>Settings</h1></div></header>
@@ -495,13 +560,9 @@ function SettingsView() {
           </div>
         </section>
         <section class="panel">
-          <div class="panel-head"><h3>Team</h3><span class="muted" style="font-size:12.5px">Assign clients and LinkedIn accounts to people</span></div>
+          <div class="panel-head"><h3>Account managers & team</h3><span class="muted" style="font-size:12.5px">The master list used across clients and LinkedIn accounts</span></div>
           <div class="panel-pad stack">
-            ${(s.team || []).map(m => html`<div class="team-row" key=${m.id}>
-              <input id=${'tm-' + m.id} class="input" value=${m.name} onBlur=${e => { const n = e.target.value.trim(); if (n && n !== m.name) renameMember(m.id, n); }} aria-label="Team member name" />
-              <button type="button" class="btn ghost icon" aria-label=${'Remove ' + m.name} onClick=${() => removeMember(m.id)}><${Icon} n="trash" s=${14} /></button>
-            </div>`)}
-            <form class="team-row" onSubmit=${addMember}><input id="tm-new" class="input" placeholder="Add a teammate's name" value=${newMember} onInput=${e => setNewMember(e.target.value)} /><button type="submit" class="btn" disabled=${!newMember.trim()}>Add</button></form>
+            <${PeopleEditor} />
             <label class="field"><span>On this device, I am</span>
               <${MemberSelect} id="set-me" settings=${s} value=${UI.me} noneLabel="Not set" onChange=${x => { pref('me', x || null); UI.set({ me: x }); }} />
               <span class="hint">Signs the activity you log, and lets you filter Today to your accounts.</span></label>
@@ -536,16 +597,6 @@ function SettingsView() {
             <label class="field"><span>Restore a backup <span class="hint">adds or overwrites records with the same id</span></span>
               <input id="set-restore" type="file" accept=".json,application/json" class="input" onChange=${onRestore} /></label>
             ${Store.mode === 'cloud' && html`<p class="muted" style="font-size:12.5px">Shared storage holds up to about 25,000 records.</p>`}
-          </div>
-        </section>
-        <section class="panel">
-          <div class="panel-head"><h3>Sample data</h3></div>
-          <div class="panel-pad stack">
-            <p class="soft" style="font-size:13px">Explore a filled-in workspace with three example clients. It runs in this tab only and never touches your data.</p>
-            <div class="btn-row">
-              ${Store.demoOn ? html`<button type="button" class="btn" onClick=${() => exitDemo(true)}>Close sample data</button>`
-                : html`<button type="button" class="btn" onClick=${() => { enterDemo(false); UI.go('today'); }}>Open sample data</button>`}
-            </div>
           </div>
         </section>
         <section class="panel">
