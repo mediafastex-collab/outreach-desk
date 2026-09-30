@@ -115,8 +115,8 @@ function ReportsView() {
   return html`<div class="page">
     <header class="page-head">
       <div><p class="eyebrow">${range.label}${range.from ? ' · ' + fmtShort(range.from) + ' to ' + fmtShort(range.to) : ''}</p><h1>Reports</h1>
-        <p class="lede">Counts are what happened in the period. Acceptance rate follows the invites sent in the period; reply rate follows the people first messaged in it.</p></div>
-      <div class="head-actions"><button type="button" class="btn" onClick=${() => copyText(reportText(title, range, a, sc), 'Report')}><${Icon} n="copy" s=${14} />Copy ${client ? 'client' : ''} report</button></div>
+        <p class="lede">What happened in the period, per client.</p></div>
+      <div class="head-actions"><${HelpButton} view="reports" /><button type="button" class="btn" onClick=${() => copyText(reportText(title, range, a, sc), 'Report')}><${Icon} n="copy" s=${14} />Copy ${client ? 'client' : ''} report</button></div>
     </header>
     <div class="toolbar">
       <div class="seg" role="group" aria-label="Period">

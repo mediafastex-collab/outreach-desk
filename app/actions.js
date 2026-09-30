@@ -140,7 +140,7 @@ function openAcceptOnDate(p) {
     confirmLabel: 'Mark accepted',
     presets: [{ label: 'Today', value: TODAY }, { label: 'Yesterday', value: addDays(TODAY, -1) }, { label: '2 days ago', value: addDays(TODAY, -2) }],
     withTime: true, timeLabel: 'At (optional)',
-    onConfirm: (d, note, time) => Act.accept(p, d, time),
+    onConfirm: (d, note, time) => acceptAndGuide(p, d),
   });
 }
 function openSnooze(p) {
@@ -186,6 +186,7 @@ function taskMenuItems(task) {
     items.push({ label: 'Resume sequence (out of office)', icon: 'play', onSelect: () => Act.resume(p) });
     items.push({ label: 'Set a reminder…', icon: 'bell', onSelect: () => openReminder(p) });
   } else if (task.kind === 'pending') {
+    items.push({ label: 'Accepted today', icon: 'userCheck', onSelect: () => acceptAndGuide(p, TODAY) });
     items.push({ label: 'Accepted on a date…', icon: 'calendar', onSelect: () => openAcceptOnDate(p) });
     items.push({ label: 'Check again in a week', icon: 'clock', onSelect: () => Act.snooze(p, addDays(TODAY, 7)) });
     items.push({ label: 'They replied…', icon: 'reply', onSelect: () => UI.open('reply', { p }) });

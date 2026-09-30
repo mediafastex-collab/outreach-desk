@@ -39,8 +39,8 @@ function ActivityView() {
   return html`<div class="page">
     <header class="page-head">
       <div><p class="eyebrow">${f.period === 'today' ? fmtLong(TODAY) : range.label}</p><h1>Activity</h1>
-        <p class="lede">Every invite, message, acceptance, reply and outcome, with the date and time it was logged and who logged it.</p></div>
-      <div class="head-actions"><button type="button" class="btn" disabled=${!shown.length} onClick=${exportCSV}><${Icon} n="download" s=${14} />Export CSV</button></div>
+        <p class="lede">Everything the team logged, with date, time and who did it.</p></div>
+      <div class="head-actions"><${HelpButton} view="activity" /><button type="button" class="btn" disabled=${!shown.length} onClick=${exportCSV}><${Icon} n="download" s=${14} />Export CSV</button></div>
     </header>
     <div class="toolbar">
       <div class="seg" role="group" aria-label="Period">

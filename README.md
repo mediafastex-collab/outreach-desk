@@ -46,5 +46,6 @@ Default sequence: connection request → Message 1 when they accept → Message 
 | `prospects.js` | Prospect list, detail panel, add and bulk import |
 | `setup.js` | Clients, sequences, settings |
 | `reports.js` | Reports and charts |
+| `help.js` | "How to use" walkthroughs for every screen |
 | `activity.js` | Activity feed with date, time and type of every action |
 | `ui.js`, `actions.js`, `main.js` | Shared components, actions with undo, app shell |

@@ -37,7 +37,7 @@ const UI = {
     const t = Object.assign({ id, text }, opts || {});
     this.toasts = this.toasts.concat(t).slice(-3);
     bump();
-    setTimeout(() => this.dismiss(id), t.undo ? 8000 : 4000);
+    setTimeout(() => this.dismiss(id), t.action ? 12000 : t.undo ? 8000 : 4000);
   },
   dismiss(id) { const n = this.toasts.filter(t => t.id !== id); if (n.length !== this.toasts.length) { this.toasts = n; bump(); } },
 };
@@ -92,6 +92,7 @@ const ICONS = {
   flag: '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>',
   send: '<line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>',
   list: '<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>',
+  help: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
   activity: '<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>',
   sun: '<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>',
   moon: '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>',
@@ -308,6 +309,7 @@ function Toasts() {
   return html`<div class="toasts" aria-live="polite">
     ${UI.toasts.map(t => html`<div class=${'toast' + (t.bad ? ' bad' : '')} key=${t.id}>
       <p>${t.text}</p>
+      ${t.action && html`<button type="button" class="toast-go" onClick=${() => { UI.dismiss(t.id); t.action.run(); }}>${t.action.label}</button>`}
       ${t.undo && html`<button type="button" onClick=${() => { UI.dismiss(t.id); t.undo(); }}>Undo</button>`}
       <button type="button" class="toast-x" aria-label="Dismiss" onClick=${() => UI.dismiss(t.id)}><${Icon} n="x" s=${14} /></button>
     </div>`)}

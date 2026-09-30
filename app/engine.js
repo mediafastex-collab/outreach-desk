@@ -709,7 +709,7 @@ function buildBoard(data, opts) {
   const accounts = new Map();
   const replies = [], upcoming = [], hiddenClients = new Set();
   let doneToday = 0;
-  const horizon = addDays(t, 7);
+  const horizon = addDays(t, 14);
   function account(client, sender) {
     const key = client.id + '|' + (sender ? sender.id : 'none');
     let a = accounts.get(key);

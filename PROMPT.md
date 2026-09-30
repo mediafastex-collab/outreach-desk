@@ -178,6 +178,14 @@ No automation, scraping or LinkedIn login. No deal pipeline, invoicing or email 
 - **Account manager master.** One list of people with roles (account manager, runs LinkedIn accounts). Add, rename or remove from Settings or the Clients screen, or add a new manager straight from the client form. Removing someone unassigns their clients and accounts but keeps their past activity.
 - **Strict LinkedIn URLs.** Only real person links are accepted: linkedin.com/in/… profiles (any country subdomain), legacy /pub/ links and Sales Navigator lead links. Company pages, posts, jobs, search pages, short lnkd.in links, other websites and emails are rejected with a reason, in single add, bulk paste, CSV import, editing, and sender accounts.
 
+## Additions (round 4)
+
+- **"How to use" on every screen.** A button in each page header opens a short step-by-step walkthrough (Back / Next, with tips). A slim "New to this screen?" nudge appears the first time only; no long instructions on the pages themselves.
+- **Today in four tabs.** To do · Waiting for acceptance · Upcoming (next 14 days, day by day) · Done today (everything logged today with the time and who did it).
+- **Clear acceptance flow.** Waiting for acceptance lists every sent invite with an "Accepted" button and a 3-step how-to. Clicking it moves Message 1 into To do immediately, and the pop-up offers "Go to Message 1", which jumps to it and highlights it.
+- **Journey strip.** Every task and prospect shows where they are: Invite ✓ → Accepted ✓ → Msg 1 (now / next date / overdue) → Msg 2 …
+- **Simpler sequence editor.** A vertical list of steps in plain words ("3 days after they accept, at 11:00 AM"), a visible "pause until they accept" point, click a step to edit it (big choices for the step type, a − / + day stepper, optional send time, message with one-click "Insert: First name / Company…"), "Add step here" between steps, and a summary (steps, messages, total length, people in progress).
+
 ## Deliverables
 
 The working app, a short daily routine inside the app, and a list of assumptions made.

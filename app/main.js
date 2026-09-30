@@ -21,6 +21,7 @@ const MODALS = {
   setList: p => html`<${SetListModal} ps=${p.ps} />`,
   find: () => html`<${QuickFind} />`,
   people: () => html`<${PeopleModal} />`,
+  help: p => html`<${HelpModal} view=${p.view} />`,
 };
 
 /* Ctrl/Cmd+K: jump to any prospect, client or screen. */
@@ -132,6 +133,7 @@ function Banners() {
       <p><strong>Saved in this browser only.</strong> Each browser keeps its own copy. Export a backup from Settings now and then, and restore it on another device if you switch.</p>
       <button type="button" class="btn sm ghost" onClick=${() => { pref('hideLocalBanner', true); setHideLocal(true); }}>Got it</button></div>`);
   }
+  if (VIEWS.indexOf(UI.view) !== -1 && Object.keys(currentData().clients).length) out.push(html`<${PageHint} key=${'hint-' + UI.view} view=${UI.view} />`);
   if (Store.readOnly && !Store.demoOn) {
     out.push(html`<div class="banner ro" key="ro"><${Icon} n="info" /><p><strong>View only.</strong> Ask the owner for edit access to log activity here.</p></div>`);
   }

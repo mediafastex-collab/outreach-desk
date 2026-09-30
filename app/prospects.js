@@ -103,6 +103,7 @@ function ProspectsView() {
         <p class="lede">${fmtNum(scoped.length)} ${q || f.clientId || f.senderId || f.sequenceId || f.tag ? 'matching' : 'in total'} · ${fmtNum(counts.active + counts.invited + counts.queued)} in progress · ${fmtNum(counts.meeting)} meetings booked</p>
       </div>
       <div class="head-actions">
+        <${HelpButton} view="prospects" />
         <button type="button" class="btn" disabled=${!rows.length} onClick=${() => saveFile('prospects-' + TODAY + '.csv', prospectsCSV(rows, data))}><${Icon} n="download" s=${14} />Export CSV</button>
         <button type="button" class="btn" disabled=${noClients} onClick=${() => UI.open('bulk', { clientId: f.clientId })}><${Icon} n="upload" s=${14} />Add in bulk</button>
         <button type="button" class="btn primary" disabled=${noClients} onClick=${() => UI.open('addProspect', { clientId: f.clientId })}><${Icon} n="plus" s=${14} />Add prospect</button>
@@ -240,7 +241,7 @@ function NextCard({ p, data }) {
       <div class="task-meta"><span class="what">Waiting for acceptance</span><span class=${'pill ' + (stale ? 'tone-overdue' : 'tone-info')}>sent ${relDay(p.invitedOn, TODAY)}</span></div>
       ${stale && html`<p class="task-note">Pending ${days} days. Consider withdrawing it to keep the account's pending list short.</p>`}
       <div class="btn-row">
-        <button type="button" class="btn sm primary" disabled=${busy} onClick=${run(() => Act.accept(p, TODAY))}><${Icon} n="userCheck" s=${14} />Accepted today</button>
+        <button type="button" class="btn sm primary" disabled=${busy} onClick=${run(() => acceptAndGuide(p, TODAY))}><${Icon} n="userCheck" s=${14} />Accepted today</button>
         <button type="button" class="btn sm" onClick=${() => openAcceptOnDate(p)}>Accepted earlier…</button>
         ${replied}
         <button type="button" class="btn sm" onClick=${() => openWithdraw(p)}><${Icon} n="logout" s=${14} />Withdraw…</button>
@@ -417,6 +418,7 @@ function ProspectDrawer({ cid, pid }) {
       </div>
       <div class="drawer-body">
         ${others.length > 0 && html`<div class="note-box warn">Also a prospect for ${others.map(o => (data.clients[o.clientId] || {}).name).join(', ')}. Coordinate so they don't hear from two accounts.</div>`}
+        <section class="drawer-sec"><h3>Journey</h3><${Journey} p=${p} seq=${seq} /></section>
         <section class="drawer-sec"><h3>Next</h3><${NextCard} p=${p} data=${data} /></section>
         ${p.followUpOn && html`<section class="drawer-sec"><h3>Reminder</h3>
           <div class="next-card"><div class="task-meta"><${Due} due=${p.followUpOn} /><span>${p.followUpNote || 'Follow up'}</span></div>

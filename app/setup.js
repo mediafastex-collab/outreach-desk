@@ -101,8 +101,9 @@ function ClientsView() {
   return html`<div class="page">
     <header class="page-head">
       <div><p class="eyebrow">${plural(live.length, 'client')} · ${plural(senders, 'LinkedIn account')}</p><h1>Clients</h1>
-        <p class="lede">Each client has one or more LinkedIn accounts you send from. Daily and weekly invite limits keep those accounts safe.</p></div>
+        <p class="lede">The companies you run outreach for and the LinkedIn accounts you send from.</p></div>
       <div class="head-actions">
+        <${HelpButton} view="clients" />
         <button type="button" class="btn" onClick=${() => UI.open('people', {})}><${Icon} n="users" s=${14} />Account managers</button>
         <button type="button" class="btn primary" onClick=${() => UI.open('client', {})}><${Icon} n="plus" s=${14} />Add client</button></div>
     </header>
@@ -193,72 +194,99 @@ function ClientModal({ id }) {
 }
 
 /* ---------- sequences ---------- */
-function CadenceRuler({ seq }) {
-  const pts = cadence(seq);
-  return html`<div class="ruler" aria-label="Cadence">
-    <div class="ruler-track">
-      ${pts.map(x => html`${x.gateBefore && html`<div class="ruler-node gate" key=${'g' + x.i}><span class="pt"></span><span class="day">accepted</span><span class="lbl muted" style="font-weight:500">waits here</span></div>`}
-        <div class="ruler-node" key=${x.step.id}>
-          <span class="pt"><${Icon} n=${(STEP_TYPES[x.step.type] || STEP_TYPES.task).icon} s=${11} /></span>
-          <span class="day">Day ${x.day}${isClock(x.step.time) ? ' · ' + fmtClock(x.step.time) : ''}</span>
-          <span class="lbl">${stepShort(seq, x.i)}${x.step.label ? html`<br /><span class="muted" style="font-weight:500">${x.step.label}</span>` : ''}</span>
-        </div>`)}
-    </div>
-  </div>`;
+const STEP_CHOICES = ['connect', 'message', 'inmail', 'voice', 'visit', 'engage', 'follow', 'task'];
+function daysWord(d) { return d + ' day' + (d === 1 ? '' : 's'); }
+/* Plain-English timing for step i. */
+function whenPhrase(seq, i) {
+  const st = seq.steps[i];
+  const d = Math.max(0, parseInt(st.delayDays, 10) || 0);
+  const prev = seq.steps[i - 1];
+  let w;
+  if (i === 0) w = d === 0 ? 'On the day you add them' : daysWord(d) + ' after you add them';
+  else if (prev && prev.type === 'connect') w = d === 0 ? 'As soon as they accept' : daysWord(d) + ' after they accept';
+  else w = d === 0 ? 'Same day as the step before' : daysWord(d) + ' after the step before';
+  return w + (isClock(st.time) ? ', at ' + fmtClock(st.time) : '');
+}
+function delayWords(seq, i) {
+  const prev = seq.steps[i - 1];
+  if (i === 0) return ['Do this', 'days after the prospect is added'];
+  if (prev && prev.type === 'connect') return ['Do this', 'days after they accept the invite'];
+  return ['Wait', 'days after the step before'];
 }
 
-function StepCard({ seq, i, onChange, onMove, onRemove, taRef, inUseCount }) {
-  const s = seq.steps[i];
-  const t = STEP_TYPES[s.type] || STEP_TYPES.task;
-  const prev = seq.steps[i - 1];
-  const afterConnect = prev && prev.type === 'connect';
-  const set = (k, val) => onChange(Object.assign({}, s, { [k]: val }));
+function FlowStep({ seq, i, open, onToggle, onChange, onMove, onRemove, taRef, inUse, day }) {
+  const st = seq.steps[i];
+  const t = STEP_TYPES[st.type] || STEP_TYPES.task;
+  const set = (k, v) => onChange(Object.assign({}, st, { [k]: v }));
+  const d = Math.max(0, parseInt(st.delayDays, 10) || 0);
+  const hasText = st.type !== 'visit' && st.type !== 'follow';
+  const words = delayWords(seq, i);
+  const otherConnect = seq.steps.some((x, j) => j !== i && x.type === 'connect');
+  const preview = String(st.template || '').replace(/\s+/g, ' ').trim();
   const insertVar = name => {
-    const el = taRef(s.id);
+    const el = taRef(st.id);
     const token = '{{' + name + '}}';
-    const cur = s.template || '';
+    const cur = st.template || '';
     if (el && typeof el.selectionStart === 'number') {
       const a = el.selectionStart, b = el.selectionEnd;
       set('template', cur.slice(0, a) + token + cur.slice(b));
       setTimeout(() => { try { el.focus(); el.selectionStart = el.selectionEnd = a + token.length; } catch (e) { /* ignore */ } }, 0);
     } else set('template', cur + token);
   };
-  let delayText;
-  if (i === 0) delayText = ['Send', 'days after the prospect is added (their start date)'];
-  else if (afterConnect) delayText = ['Send', 'days after they accept'];
-  else delayText = ['Wait', 'days after the previous step is done'];
-  const hasText = s.type !== 'visit' && s.type !== 'follow';
-  return html`<div class="step-card">
-    <div class="sh">
-      <span class="idx">${i + 1}</span>
-      <select id=${'st-type-' + s.id} class="select sm" style="width:auto" value=${s.type} onChange=${e => set('type', e.target.value)} aria-label="Step type">
-        ${STEP_TYPE_ORDER.map(k => html`<option key=${k} value=${k} selected=${s.type === k}>${STEP_TYPES[k].name}</option>`)}
-      </select>
-      <input id=${'st-label-' + s.id} class="input sm" style="flex:1 1 140px;width:auto" placeholder="Label (optional), e.g. Value" value=${s.label || ''} onInput=${e => set('label', e.target.value)} />
-      <span class="btn-row" style="gap:4px">
-        <button type="button" class="btn sm ghost icon" aria-label="Move up" disabled=${i === 0} onClick=${() => onMove(i, -1)}><${Icon} n="up" s=${14} /></button>
-        <button type="button" class="btn sm ghost icon" aria-label="Move down" disabled=${i === seq.steps.length - 1} onClick=${() => onMove(i, 1)}><${Icon} n="down" s=${14} /></button>
-        <button type="button" class="btn sm ghost icon" aria-label="Remove step" disabled=${seq.steps.length === 1} onClick=${() => onRemove(i)}><${Icon} n="trash" s=${14} /></button>
-      </span>
-    </div>
-    <div class="sb">
-      <div class="delay">
-        <span>${delayText[0]}</span>
-        <input id=${'st-delay-' + s.id} class="input sm num" type="number" min="0" max="365" value=${s.delayDays} onInput=${e => set('delayDays', Math.max(0, parseInt(e.target.value, 10) || 0))} aria-label="Days" />
-        <span>${delayText[1]}</span>
-        <span class="muted">·</span>
-        <label class="delay-time"><span>at</span><input id=${'st-time-' + s.id} class="input sm" type="time" value=${s.time || ''} onInput=${e => set('time', e.target.value)} aria-label="Send time (optional)" /></label>
-        ${s.time ? html`<button type="button" class="btn sm ghost" onClick=${() => set('time', '')}>Any time</button>` : html`<span class="muted" style="font-size:12px">any time of day</span>`}
-        ${inUseCount > 0 && html`<span class="pill tone-info">${plural(inUseCount, 'person', 'people')} waiting here</span>`}
-      </div>
-      ${hasText && html`<label class="field"><span>${t.text}</span>
-        <textarea id=${'st-tpl-' + s.id} ref=${el => taRef(s.id, el)} class="textarea" style=${s.type === 'connect' ? 'min-height:72px' : ''} value=${s.template || ''} onInput=${e => set('template', e.target.value)}></textarea></label>
-      <div class="btn-row" style="justify-content:space-between">
-        <div class="var-chips" aria-label="Insert variable">${TEMPLATE_VARS.map(([k]) => html`<button type="button" key=${k} onClick=${() => insertVar(k)}>{{${k}}}</button>`)}</div>
-        <${Chars} text=${s.template} connect=${s.type === 'connect'} />
+  return html`<li class=${'flow-step' + (open ? ' open' : '')}>
+    <span class="flow-node"><${Icon} n=${t.icon} s=${15} /></span>
+    <div class="flow-card">
+      <button type="button" class="flow-head" aria-expanded=${open ? 'true' : 'false'} onClick=${onToggle}>
+        <span class="flow-day mono">${day}</span>
+        <span class="flow-main">
+          <span class="flow-title">${stepTitle(seq, i)}</span>
+          <span class="flow-when">${whenPhrase(seq, i)}</span>
+          ${!open && html`<span class="flow-preview">${preview ? preview.slice(0, 110) + (preview.length > 110 ? '…' : '') : t.verb + '.'}</span>`}
+        </span>
+        ${inUse > 0 && html`<span class="pill tone-info" title="People currently waiting on this step">${inUse} here</span>`}
+        <span class="flow-edit">${open ? 'Close' : 'Edit'}<${Icon} n=${open ? 'chevDown' : 'chevRight'} s=${14} /></span>
+      </button>
+      ${open && html`<div class="flow-body">
+        <div class="field"><span>What happens</span>
+          <div class="choice-grid">${STEP_CHOICES.map(k => html`<button type="button" key=${k} class="choice" aria-pressed=${st.type === k ? 'true' : 'false'} disabled=${k === 'connect' && otherConnect}
+            title=${k === 'connect' && otherConnect ? 'A sequence has only one connection request' : ''} onClick=${() => set('type', k)}><${Icon} n=${STEP_TYPES[k].icon} s=${15} />${STEP_TYPES[k].name}</button>`)}</div></div>
+        <div class="field"><span>When</span>
+          <div class="when-row">
+            <span>${words[0]}</span>
+            <span class="stepper">
+              <button type="button" class="btn sm icon" aria-label="One day less" disabled=${d === 0} onClick=${() => set('delayDays', Math.max(0, d - 1))}>−</button>
+              <input id=${'fl-d-' + st.id} class="input sm num" type="number" min="0" max="365" value=${d} aria-label="Days" onInput=${e => set('delayDays', Math.max(0, parseInt(e.target.value, 10) || 0))} />
+              <button type="button" class="btn sm icon" aria-label="One day more" onClick=${() => set('delayDays', d + 1)}>+</button>
+            </span>
+            <span>${words[1]}</span>
+          </div>
+          <div class="when-row">
+            <span>Send at</span>
+            <input id=${'fl-t-' + st.id} class="input sm" type="time" style="width:130px" value=${st.time || ''} onInput=${e => set('time', e.target.value)} />
+            ${st.time ? html`<button type="button" class="btn sm ghost" onClick=${() => set('time', '')}>Any time of day</button>` : html`<span class="muted" style="font-size:12.5px">optional, leave empty for any time that day</span>`}
+          </div>
+          <span class="hint">Weekends and other non-working days move to the next working day.</span>
+        </div>
+        ${hasText && html`<div class="field"><span>${t.text}</span>
+          <textarea id=${'fl-m-' + st.id} ref=${el => taRef(st.id, el)} class="textarea" style=${st.type === 'connect' ? 'min-height:80px' : 'min-height:120px'} value=${st.template || ''} onInput=${e => set('template', e.target.value)}
+            placeholder=${st.type === 'connect' ? 'Optional. Many invites work better with no note.' : 'Hi {{firstName}}, …'}></textarea>
+          <div class="btn-row" style="justify-content:space-between">
+            <div class="var-chips"><span class="muted" style="font-size:12px">Insert:</span>${TEMPLATE_VARS.map(([k, l]) => html`<button type="button" key=${k} title=${'Inserts {{' + k + '}}'} onClick=${() => insertVar(k)}>${l}</button>`)}</div>
+            <${Chars} text=${st.template} connect=${st.type === 'connect'} />
+          </div>
+          <span class="hint">Text in [square brackets] is flagged on every task until you replace it, so nothing goes out half-written.</span>
+        </div>`}
+        <label class="field"><span>Short name <span class="hint">optional, e.g. "Value" or "Breakup"</span></span>
+          <input id=${'fl-l-' + st.id} class="input sm" style="max-width:280px" value=${st.label || ''} onInput=${e => set('label', e.target.value)} /></label>
+        <div class="btn-row flow-tools">
+          <button type="button" class="btn sm" disabled=${i === 0} onClick=${() => onMove(i, -1)}><${Icon} n="up" s=${14} />Move up</button>
+          <button type="button" class="btn sm" disabled=${i === seq.steps.length - 1} onClick=${() => onMove(i, 1)}><${Icon} n="down" s=${14} />Move down</button>
+          <span style="flex:1"></span>
+          <button type="button" class="btn sm danger" disabled=${seq.steps.length === 1} onClick=${() => onRemove(i)}><${Icon} n="trash" s=${14} />Delete step</button>
+        </div>
       </div>`}
     </div>
-  </div>`;
+  </li>`;
 }
 
 function seqSignature(s) {
@@ -268,6 +296,8 @@ function seqSignature(s) {
 function SequenceEditor({ seq, data }) {
   const [d, setD] = useState(() => clone(seq));
   const [base, setBase] = useState(() => seqSignature(seq));
+  const [openId, setOpenId] = useState(null);
+  const [more, setMore] = useState(false);
   const refs = useRef({});
   const dirty = seqSignature(d) !== base;
   useEffect(() => {
@@ -283,8 +313,22 @@ function SequenceEditor({ seq, data }) {
   const bad = issues.some(x => x.level === 'bad');
   const setStep = i => st => { const steps = d.steps.slice(); steps[i] = st; setD(Object.assign({}, d, { steps })); };
   const move = (i, dir) => { const steps = d.steps.slice(); const j = i + dir; if (j < 0 || j >= steps.length) return; const t = steps[i]; steps[i] = steps[j]; steps[j] = t; setD(Object.assign({}, d, { steps })); };
-  const remove = i => { const steps = d.steps.slice(); steps.splice(i, 1); setD(Object.assign({}, d, { steps })); };
-  const add = type => setD(Object.assign({}, d, { steps: d.steps.concat({ id: uid('st'), type, label: '', delayDays: type === 'connect' ? 0 : 3, template: type === 'message' ? 'Hi {{firstName}}, ' : '' }) }));
+  const remove = i => UI.open('confirm', { title: 'Delete ' + stepTitle(d, i) + '?', confirmLabel: 'Delete step', danger: true,
+    body: waitingAt(d.steps[i].id) ? plural(waitingAt(d.steps[i].id), 'person is', 'people are') + ' waiting on this step. After you save, they move on to the next one.' : 'The step is removed when you save the sequence.',
+    onConfirm: () => { const steps = d.steps.slice(); steps.splice(i, 1); setD(Object.assign({}, d, { steps })); setOpenId(null); } });
+  const add = (type, at) => {
+    const st = { id: uid('st'), type, label: '', delayDays: type === 'connect' ? 0 : type === 'message' ? 3 : 1, time: '', template: type === 'message' ? 'Hi {{firstName}}, ' : '' };
+    const steps = d.steps.slice();
+    steps.splice(at == null ? steps.length : at, 0, st);
+    setD(Object.assign({}, d, { steps }));
+    setOpenId(st.id);
+  };
+  const pts = cadence(d);
+  const lastAccept = pts.filter(x => x.fromAccept).slice(-1)[0];
+  const lastPlain = pts.filter(x => !x.fromAccept).slice(-1)[0];
+  const dayOf = i => { const x = pts[i]; if (!x) return ''; return x.fromAccept ? 'Day ' + x.day + '*' : 'Day ' + x.day; };
+  const hasConnect = d.steps.some(x => x.type === 'connect');
+  const addMenu = at => STEP_CHOICES.map(k => ({ label: STEP_TYPES[k].name, icon: STEP_TYPES[k].icon, disabled: k === 'connect' && hasConnect, onSelect: () => add(k, at) }));
   const save = async () => {
     if (bad || !W.guard()) return;
     const doc = Object.assign({}, d, { name: String(d.name || '').trim(), updatedAt: nowTs() });
@@ -306,25 +350,39 @@ function SequenceEditor({ seq, data }) {
   const del = () => UI.open('confirm', { title: 'Delete ' + seq.name + '?', danger: true, confirmLabel: 'Delete', body: 'Nobody uses this sequence, so it is safe to delete.', onConfirm: async () => { if (await W.deleteSequence(seq)) { UI.set({ seqSelected: null }); UI.toast('Sequence deleted.'); } } });
   return html`<div class="stack-lg">
     <div class="panel panel-pad stack">
+      <div class="seq-summary">
+        <div><span class="k">Steps</span><span class="v">${d.steps.length}</span></div>
+        <div><span class="k">Messages</span><span class="v">${d.steps.filter(x => groupOf(x.type) === 'message').length}</span></div>
+        <div><span class="k">${lastAccept ? 'From acceptance to last step' : 'Total length'}</span><span class="v">${lastAccept ? daysWord(lastAccept.day) : lastPlain ? daysWord(lastPlain.day) : '–'}</span></div>
+        <div><span class="k">In progress now</span><span class="v">${openUsers.length}</span></div>
+      </div>
       <div class="fields">
         <label class="field"><span>Name</span><input id="seq-name" class="input" value=${d.name} onInput=${e => setD(Object.assign({}, d, { name: e.target.value }))} /></label>
         <label class="field"><span>Available to</span><select id="seq-scope" class="select" value=${d.clientId || ''} onChange=${e => setD(Object.assign({}, d, { clientId: e.target.value || null }))}>
           <option value="" selected=${!d.clientId}>All clients</option>
           ${Object.values(data.clients).sort((a, b) => byText(a.name, b.name)).map(c => html`<option key=${c.id} value=${c.id} selected=${d.clientId === c.id}>Only ${c.name}</option>`)}
         </select></label>
-        <label class="field full"><span>Description</span><input id="seq-desc" class="input" placeholder="When to use this sequence" value=${d.description || ''} onInput=${e => setD(Object.assign({}, d, { description: e.target.value }))} /></label>
+        ${more && html`<label class="field full"><span>Description</span><input id="seq-desc" class="input" placeholder="When to use this sequence" value=${d.description || ''} onInput=${e => setD(Object.assign({}, d, { description: e.target.value }))} /></label>`}
       </div>
-      <div><span class="label">Cadence</span><${CadenceRuler} seq=${d} /></div>
-      <p class="muted" style="font-size:12.5px">${plural(users.length, 'prospect')} use this sequence, ${openUsers.length} still in progress. Changes apply to their upcoming steps; finished steps keep their history. Due dates on non-working days move to the next working day.</p>
+      ${!more && html`<button type="button" class="btn sm ghost" style="align-self:flex-start" onClick=${() => setMore(true)}>+ Add a description</button>`}
     </div>
     ${issues.length > 0 && html`<div class="stack">${issues.map((x, i) => html`<div key=${i} class=${'note-box ' + (x.level === 'bad' ? 'bad' : 'warn')}>${x.text}</div>`)}</div>`}
-    <div class="stack">
-      ${d.steps.map((s, i) => html`<${StepCard} key=${s.id} seq=${d} i=${i} onChange=${setStep(i)} onMove=${move} onRemove=${remove} taRef=${taRef} inUseCount=${waitingAt(s.id)} />`)}
+    <section class="panel panel-pad stack">
+      <div class="flow-head-row"><h3 style="font-size:15px;font-weight:600">The steps</h3><span class="muted" style="font-size:12.5px">Click a step to edit it.${lastAccept ? ' *Days marked with a star count from acceptance.' : ''}</span></div>
+      <ol class="flow">
+        ${d.steps.map((st, i) => html`
+          <${FlowStep} key=${st.id} seq=${d} i=${i} open=${openId === st.id} onToggle=${() => setOpenId(openId === st.id ? null : st.id)}
+            onChange=${setStep(i)} onMove=${move} onRemove=${remove} taRef=${taRef} inUse=${waitingAt(st.id)} day=${dayOf(i)} />
+          ${st.type === 'connect' && i < d.steps.length - 1 && html`<li class="flow-gate" key=${st.id + ':g'}><span class="flow-node gate"><${Icon} n="pause" s=${13} /></span>
+            <div><strong>Pause until they accept.</strong> <span class="muted">Nothing else goes out until you click "Accepted" for them on Today.</span></div></li>`}
+          ${i < d.steps.length - 1 && html`<li class="flow-add" key=${st.id + ':a'}><${Menu} label="Add step here" icon="plus" btnClass="btn sm ghost" items=${addMenu(i + 1)} /></li>`}
+        `)}
+      </ol>
       <div class="btn-row">
-        <button type="button" class="btn sm" onClick=${() => add('message')}><${Icon} n="plus" s=${14} />Add message</button>
-        <${Menu} label="Add other step" btnClass="btn sm" items=${STEP_TYPE_ORDER.filter(k => k !== 'message').map(k => ({ label: STEP_TYPES[k].name, icon: STEP_TYPES[k].icon, onSelect: () => add(k), disabled: k === 'connect' && d.steps.some(s => s.type === 'connect') }))} />
+        <button type="button" class="btn" onClick=${() => add('message')}><${Icon} n="plus" s=${14} />Add a message at the end</button>
+        <${Menu} label="Add another kind of step" btnClass="btn" items=${addMenu(null)} />
       </div>
-    </div>
+    </section>
     <div class="panel panel-pad btn-row" style="position:sticky;bottom:calc(env(safe-area-inset-bottom, 0px) + 12px);z-index:4;box-shadow:var(--shadow-2)">
       <button type="button" class="btn primary" disabled=${!dirty || bad} onClick=${save}><${Icon} n="check" s=${14} />Save sequence</button>
       ${dirty && html`<button type="button" class="btn ghost" onClick=${() => { setD(clone(seq)); setBase(seqSignature(seq)); }}>Discard changes</button>`}
@@ -410,8 +468,8 @@ function SequencesView() {
   return html`<div class="page">
     <header class="page-head">
       <div><p class="eyebrow">${plural(all.filter(s => !s.archived).length, 'sequence')} · ${plural(all.filter(s => s.clientId && !s.archived).length, 'client-specific')}</p><h1>Sequences</h1>
-        <p class="lede">Give every client its own cadence and messages, or share a template. Delays count from when the previous step was actually done; send times put each step on a clock.</p></div>
-      <div class="head-actions"><button type="button" class="btn primary" onClick=${() => UI.open('newSeq', { clientId: scope && scope[0] !== '_' ? scope : '' })}><${Icon} n="plus" s=${14} />New sequence</button></div>
+        <p class="lede">The steps each prospect goes through. Click a step to change it.</p></div>
+      <div class="head-actions"><${HelpButton} view="sequences" /><button type="button" class="btn primary" onClick=${() => UI.open('newSeq', { clientId: scope && scope[0] !== '_' ? scope : '' })}><${Icon} n="plus" s=${14} />New sequence</button></div>
     </header>
     <div class="toolbar">
       <select id="seq-scope-filter" class="select sm" value=${scope} onChange=${e => setScopeP(e.target.value)} aria-label="Show sequences for">
@@ -548,7 +606,7 @@ function SettingsView() {
   const storage = Store.mode === 'cloud' ? 'Saved in this page\'s shared storage. Everyone you share it with (with edit access) sees the same data, live.'
     : 'Saved in this browser only. Export a backup regularly, or open the published page to share with your team.';
   return html`<div class="page">
-    <header class="page-head"><div><p class="eyebrow">${s.agencyName || 'Workspace'}</p><h1>Settings</h1></div></header>
+    <header class="page-head"><div><p class="eyebrow">${s.agencyName || 'Workspace'}</p><h1>Settings</h1></div><div class="head-actions"><${HelpButton} view="settings" /></div></header>
     <div class="settings-grid">
       <div class="stack-lg">
         <section class="panel">

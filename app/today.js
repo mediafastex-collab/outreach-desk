@@ -72,7 +72,7 @@ function TaskRow({ task, showClient }) {
     actions = html`${openLink}
       <button type="button" class="btn sm primary" disabled=${busy} onClick=${run(() => Act.done(fresh(p)))}><${Icon} n="check" s=${14} />${doneLabel(task)}</button>`;
   }
-  return html`<article class="task">
+  return html`<article class=${'task' + (UI.flash === p.clientId + '/' + p.id ? ' flash' : '')} data-pkey=${p.clientId + '/' + p.id}>
     <div class=${'task-icon ' + GROUP_TONE[g]}><${Icon} n=${icon} /></div>
     <div class="task-body">
       <div class="task-top">
@@ -88,6 +88,7 @@ function TaskRow({ task, showClient }) {
         ${isConnect && text && html`<${Chars} text=${text} connect=${true} />`}
         ${isConnect && !text && html`<span class="muted" style="font-size:12.5px">No note (fine for most invites)</span>`}
       </div>
+      ${task.kind === 'step' && html`<${Journey} p=${p} seq=${task.seq} />`}
       ${text && html`<button type="button" class=${'task-msg' + (open ? '' : ' clamp')} aria-expanded=${open ? 'true' : 'false'} title=${open ? 'Collapse' : 'Show the full message'} onClick=${() => setOpen(!open)}><span class="mt"><${MsgText} text=${text} /></span></button>`}
       ${task.kind === 'step' && !text && task.step.type !== 'connect' && html`<p class="task-note">${(STEP_TYPES[task.step.type] || STEP_TYPES.task).verb}.</p>`}
       ${task.kind === 'reply' && lastReply && lastReply.note && html`<p class="task-note">“${lastReply.note}”</p>`}
@@ -127,27 +128,6 @@ function AccountGroup({ a, tasks }) {
   </section>`;
 }
 
-function PendingPanel({ board, settings }) {
-  const rows = board.accounts.filter(a => a.pending.length);
-  return html`<section class="panel">
-    <div class="panel-head"><h3>Pending invites</h3><span class="mono muted">${board.counts.pending}</span></div>
-    ${rows.length === 0
-      ? html`<p class="panel-pad muted">No invites are waiting for acceptance.</p>`
-      : rows.map(a => html`<div class="pend-row" key=${a.key}>
-          <div class="pend-top">
-            <span class="acct-title" style="flex:1 1 auto"><${ClientChip} client=${a.client} /><span>${a.sender ? a.sender.name : 'No account'}</span></span>
-          </div>
-          <div class="pend-nums">
-            <span class="num">${a.pending.length} waiting</span>
-            <span class="num">oldest ${plural(a.pending[0].pendingDays, 'day')}</span>
-            ${a.stale.length > 0 && html`<span class="pill tone-overdue">${a.stale.length} over ${settings.staleDays} days</span>`}
-          </div>
-          <div class="btn-row"><button type="button" class="btn sm" onClick=${() => UI.open('accept', { key: a.key })}><${Icon} n="userCheck" s=${14} />Check acceptances</button></div>
-        </div>`)}
-  </section>`;
-}
-
-/* Today's timed tasks as an hour-by-hour agenda. */
 function SchedulePanel({ board }) {
   const all = board.accounts.flatMap(a => a.tasks).filter(x => x.due === TODAY);
   const timed = all.filter(x => x.time).sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0));
@@ -175,121 +155,260 @@ function SchedulePanel({ board }) {
   </section>`;
 }
 
-function RoutinePanel({ settings }) {
-  return html`<section class="panel">
-    <div class="panel-head"><h3>Daily routine</h3><span class="mono muted">${settings.reminderTime || '09:30'}</span></div>
-    <ol class="routine">
-      <li><strong>Check acceptances</strong> on each account and tick who connected.</li>
-      <li><strong>Answer replies</strong> before anything else.</li>
-      <li><strong>Send the follow-ups</strong> due today, account by account.</li>
-      <li><strong>Send new invites</strong> up to each account's allowance.</li>
-      <li><strong>Withdraw</strong> invites older than ${settings.staleDays || 21} days once a week.</li>
-    </ol>
-    <div class="panel-pad" style="padding-top:0">
-      <a class="btn sm" href=${gcalRoutineLink(settings)} target="_blank" rel="noopener noreferrer"><${Icon} n="calendar" s=${14} />Add weekday reminder to Google Calendar</a>
-    </div>
-  </section>`;
+function stepChip(seq, i) {
+  const s = seq.steps[i];
+  if (s.type === 'connect') return 'Invite';
+  if (s.type === 'message') return 'Msg ' + messageNumber(seq, i);
+  return (STEP_TYPES[s.type] || STEP_TYPES.task).short;
+}
+function Journey({ p, seq }) {
+  if (!seq || !seq.steps.length) return null;
+  const cur = stepIndexOf(p, seq);
+  const open = ['queued', 'active', 'invited'].indexOf(p.status) !== -1;
+  const skipped = new Set((p.log || []).filter(e => e.kind === 'skipped').map(e => e.stepId));
+  const chips = [];
+  seq.steps.forEach((st, i) => {
+    let state = i < cur ? (skipped.has(st.id) ? 'skip' : 'done') : i === cur && open && p.status !== 'invited' ? 'now' : 'next';
+    chips.push({ key: st.id, label: stepChip(seq, i), state });
+    if (st.type === 'connect') {
+      const accepted = !!(p.acceptedOn || p.alreadyConnected);
+      chips.push({ key: st.id + ':gate', label: accepted ? 'Accepted' : p.status === 'invited' ? 'Waiting to accept' : 'Accept', state: accepted ? 'done' : p.status === 'invited' ? 'wait' : 'next', gate: true });
+    }
+  });
+  let nowLabel = 'now';
+  if (open && p.status !== 'invited' && cur < seq.steps.length) {
+    const due = stepDue(p, seq, cur, currentData().settings);
+    if (due > TODAY) nowLabel = 'next, ' + fmtShort(due);
+    else if (due < TODAY) nowLabel = 'overdue';
+  }
+  if (!open) chips.push({ key: 'end', label: (STATUSES[p.status] || {}).label || p.status, state: 'end' });
+  return html`<ol class="journey" aria-label="Sequence progress">
+    ${chips.map(c => html`<li key=${c.key} class=${'j-' + c.state + (c.gate ? ' j-gate' : '')}>${c.state === 'done' ? html`<${Icon} n="check" s=${11} />` : c.state === 'wait' ? html`<${Icon} n="clock" s=${11} />` : ''}${c.label}${c.state === 'now' ? ' · ' + nowLabel : ''}</li>`)}
+  </ol>`;
 }
 
-function Upcoming({ board }) {
-  const [open, setOpen] = useState(false);
-  if (!board.upcoming.length) return null;
-  const shown = open ? board.upcoming : board.upcoming.slice(0, 3);
+function flashTask(p) {
+  UI.set({ todayFilter: Object.assign({}, UI.todayFilter, { tab: 'todo', group: 'all' }), flash: p.clientId + '/' + p.id });
+  setTimeout(() => {
+    const el = document.querySelector('[data-pkey="' + p.clientId + '/' + p.id + '"]');
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, 120);
+  setTimeout(() => { if (UI.flash === p.clientId + '/' + p.id) UI.set({ flash: null }); }, 4000);
+}
+async function acceptAndGuide(p, on) {
+  const ok = await Act.accept(p, on);
+  if (!ok) return;
+  const q = fresh(p);
+  const seq = seqFor(q);
+  if (q.status === 'active' && seq) {
+    const i = stepIndexOf(q, seq);
+    const due = stepDue(q, seq, i, currentData().settings);
+    UI.toasts = UI.toasts.slice(0, -1);
+    UI.toast(fullName(q) + ' accepted. ' + stepShort(seq, i) + (due <= TODAY ? ' is ready to send now.' : ' is scheduled for ' + fmtDay(due) + '.'),
+      { undo: () => W.saveProspect(p), action: due <= TODAY ? { label: 'Go to ' + stepShort(seq, i), run: () => flashTask(q) } : null });
+  }
+}
+
+function WaitingRow({ task }) {
+  const p = task.p;
+  const [busy, setBusy] = useState(false);
+  const stale = task.stale;
+  return html`<article class="task" data-pkey=${p.clientId + '/' + p.id}>
+    <div class=${'task-icon ' + (stale ? 'tone-overdue' : 'tone-info')}><${Icon} n="clock" /></div>
+    <div class="task-body">
+      <div class="task-top">
+        <button type="button" class="task-name" onClick=${() => UI.openProspect(p)}>${fullName(p)}</button>
+        <span class="task-sub">${[p.title, p.company].filter(Boolean).join(' · ')}</span>
+      </div>
+      <div class="task-meta">
+        <span class="task-step">Invite sent ${relDay(p.invitedOn || task.due, TODAY)}${p.invitedOn ? ' (' + fmtDay(p.invitedOn) + ')' : ''}</span>
+        ${stale && html`<span class="pill tone-overdue">No answer for ${task.pendingDays} days. Consider withdrawing</span>`}
+      </div>
+      <${Journey} p=${p} seq=${task.seq} />
+    </div>
+    <div class="task-actions">
+      <a class="btn sm" href=${p.url} target="_blank" rel="noopener noreferrer"><${Icon} n="external" s=${14} />Open profile</a>
+      <button type="button" class="btn sm primary" disabled=${busy} title="They now show as a connection on LinkedIn" onClick=${async () => { setBusy(true); try { await acceptAndGuide(fresh(p), TODAY); } finally { setBusy(false); } }}><${Icon} n="userCheck" s=${14} />Accepted</button>
+      <${Menu} icon="more" items=${[
+        { label: 'Accepted on an earlier day…', icon: 'calendar', onSelect: () => UI.open('date', { title: 'When did ' + (p.firstName || 'they') + ' accept?', sub: 'Message 1 is scheduled from this date.', confirmLabel: 'Mark accepted', withTime: true, timeLabel: 'At (optional)', presets: [{ label: 'Today', value: TODAY }, { label: 'Yesterday', value: addDays(TODAY, -1) }, { label: '2 days ago', value: addDays(TODAY, -2) }], onConfirm: d => acceptAndGuide(fresh(p), d) }) },
+        { label: 'They replied to the invite…', icon: 'reply', onSelect: () => UI.open('reply', { p: fresh(p) }) },
+        { label: 'Not yet, check again in a week', icon: 'clock', onSelect: () => Act.snooze(fresh(p), addDays(TODAY, 7)) },
+        { label: 'Withdraw invite…', icon: 'logout', onSelect: () => openWithdraw(fresh(p)) },
+        { divider: true },
+        { label: 'Open details', icon: 'user', onSelect: () => UI.openProspect(p) },
+      ]} />
+    </div>
+  </article>`;
+}
+
+function WaitingTab({ board, settings }) {
+  const accts = board.accounts.filter(a => a.pending.length);
+  if (!accts.length) return html`<div class="panel"><${Empty} icon="userCheck" title="Nobody is waiting">When you send a connection request it shows up here until you mark the person as accepted.</${Empty}></div>`;
+  return html`<div class="stack-lg">
+    <div class="steps-strip">
+      <div><span class="n">1</span>Open LinkedIn as the account below → <a href=${LINKEDIN_LINKS.connections} target="_blank" rel="noopener noreferrer">My Network → Connections</a>, sorted by "Recently added".</div>
+      <div><span class="n">2</span>Anyone here who now shows as a connection: click <strong>Accepted</strong>.</div>
+      <div><span class="n">3</span>Their <strong>Message 1</strong> moves to <strong>To do</strong> right away, ready to send.</div>
+    </div>
+    ${accts.map(a => html`<section class="panel acct" key=${a.key}>
+      <header class="acct-head">
+        <div class="acct-title"><${ClientChip} client=${a.client} /><strong>${a.sender ? a.sender.name : 'No LinkedIn account set'}</strong>
+          <span class="muted">${plural(a.pending.length, 'person', 'people')} waiting${a.stale.length ? ' · ' + a.stale.length + ' over ' + settings.staleDays + ' days' : ''}</span></div>
+        <button type="button" class="btn sm" onClick=${() => UI.open('accept', { key: a.key })}><${Icon} n="checkSquare" s=${14} />Tick several at once</button>
+      </header>
+      ${a.pending.map(x => html`<${WaitingRow} key=${x.key} task=${x} />`)}
+    </section>`)}
+  </div>`;
+}
+
+function UpcomingTab({ board }) {
+  if (!board.upcoming.length) return html`<div class="panel"><${Empty} icon="calendar" title="Nothing scheduled in the next 14 days">New steps appear here as invites get accepted and messages go out.</${Empty}></div>`;
+  return html`<div class="stack-lg">${board.upcoming.map(day => html`<section class="panel acct" key=${day.date}>
+    <header class="acct-head"><div class="acct-title"><strong>${fmtLong(day.date)}</strong><span class="muted">${relDay(day.date, TODAY)} · ${plural(day.tasks.length, 'task')}</span></div></header>
+    ${day.tasks.slice().sort(taskOrder).map(x => html`<article class="task" key=${x.key}>
+      <div class=${'task-icon ' + GROUP_TONE[x.group]}><${Icon} n=${x.kind === 'step' ? (STEP_TYPES[x.step.type] || STEP_TYPES.task).icon : GROUP_ICON[x.group]} /></div>
+      <div class="task-body">
+        <div class="task-top"><button type="button" class="task-name" onClick=${() => UI.openProspect(x.p)}>${fullName(x.p)}</button><span class="task-sub">${[x.p.title, x.p.company].filter(Boolean).join(' · ')}</span></div>
+        <div class="task-meta">
+          <${ClientChip} client=${x.client} /><span class="task-step">${x.kind === 'reminder' ? 'Reminder' + (x.note ? ': ' + x.note : '') : x.title}</span>
+          ${x.time && html`<span class="pill tone-neutral"><${Icon} n="clock" s=${11} />${fmtClock(x.time)}</span>`}
+          <span class="muted" style="font-size:12.5px">${x.sender ? 'from ' + x.sender.name : ''}</span>
+        </div>
+        ${x.kind === 'step' && html`<${Journey} p=${x.p} seq=${x.seq} />`}
+      </div>
+      <div class="task-actions">
+        <button type="button" class="btn sm" onClick=${() => UI.openProspect(x.p)}>Details</button>
+        <${Menu} icon="more" items=${taskMenuItems(Object.assign({}, x, { p: fresh(x.p) }))} />
+      </div>
+    </article>`)}
+  </section>`)}</div>`;
+}
+
+function DoneTab({ data, f }) {
+  const rows = useMemo(() => {
+    const out = [];
+    for (const p of data.prospects) {
+      const c = data.clients[p.clientId];
+      if (!c) continue;
+      if (f.clientId && p.clientId !== f.clientId) continue;
+      if (f.clientId && f.listId && (f.listId === '_none' ? p.listId : p.listId !== f.listId)) continue;
+      const sender = senderOf(c, p);
+      if (f.operatorId && operatorOf(c, sender) !== f.operatorId) continue;
+      for (const e of p.log || []) if (e.on === TODAY && e.kind !== 'added') out.push({ e, p, c, sender });
+    }
+    return out.sort((a, b) => ((a.e.ts || '') < (b.e.ts || '') ? 1 : -1));
+  }, [data, TODAY, f.clientId, f.listId, f.operatorId]);
+  if (!rows.length) return html`<div class="panel"><${Empty} icon="check" title="Nothing logged yet today">Everything you mark as sent, accepted or replied shows up here with the time.</${Empty}></div>`;
   return html`<section class="panel">
-    <div class="panel-head"><h3>Next 7 days</h3><span class="mono muted">${board.counts.upcoming} tasks</span></div>
-    ${shown.map(day => {
-      const byClient = {};
-      for (const x of day.tasks) (byClient[x.client.id] || (byClient[x.client.id] = { client: x.client, n: 0, inv: 0, msg: 0 })).n++;
-      for (const x of day.tasks) { const b = byClient[x.client.id]; if (x.group === 'invite') b.inv++; if (x.group === 'message') b.msg++; }
-      return html`<div class="upcoming-day" key=${day.date}>
-        <span class="d">${fmtDay(day.date)}</span>
-        <div class="upcoming-list">${Object.values(byClient).map(b => html`<span key=${b.client.id} style="display:inline-flex;gap:6px;align-items:center"><${ClientChip} client=${b.client} /><span class="num">${plural(b.n, 'task')}${b.msg ? ' · ' + b.msg + ' msg' : ''}${b.inv ? ' · ' + b.inv + ' inv' : ''}</span></span>`)}</div>
-      </div>`;
-    })}
-    ${board.upcoming.length > 3 && html`<div class="panel-pad" style="padding-top:8px"><button type="button" class="btn sm ghost" onClick=${() => setOpen(!open)}>${open ? 'Show less' : 'Show all 7 days'}</button></div>`}
+    <div class="panel-head"><h3>Done today</h3><span class="mono muted">${rows.length}</span></div>
+    <ul class="acts feed">${rows.map((x, i) => {
+      const k = ACTIVITY_KINDS[activityKind(x.e)];
+      return html`<li class="act" key=${i}>
+        <span class="act-time mono">${x.e.ts ? fmtTime(x.e.ts) : '–'}</span>
+        <span class=${'act-ic tone-' + k.tone}><${Icon} n=${k.icon} s=${13} /></span>
+        <div class="act-body">
+          <div class="act-text"><button type="button" class="linkish strong" onClick=${() => UI.openProspect(x.p)}>${fullName(x.p)}</button> <span class="muted">· ${x.sender ? x.sender.name : ''}</span></div>
+          <div class="act-text">${activityText(x.e)}${x.e.by && memberName(data.settings, x.e.by) ? html` <span class="muted">· by ${memberName(data.settings, x.e.by)}</span>` : ''}</div>
+          ${activityNote(x.e) && html`<div class="act-note">${activityNote(x.e)}</div>`}
+        </div>
+        <span class="act-client"><${ClientChip} client=${x.c} /></span>
+      </li>`;
+    })}</ul>
   </section>`;
 }
 
 function TodayView() {
   const data = currentData();
   const f = UI.todayFilter;
+  const tab = f.tab || 'todo';
   const board = useMemo(() => buildBoard(data, { today: TODAY, clientId: f.clientId, operatorId: f.operatorId, listId: f.clientId ? f.listId : '' }), [data, TODAY, f.clientId, f.operatorId, f.listId]);
   const setF = patch => UI.set({ todayFilter: Object.assign({}, f, patch) });
   const c = board.counts;
-  const g = f.group;
+  const g = f.group || 'all';
   const match = x => g === 'all' || (g === 'overdue' ? x.due < TODAY : x.group === g);
   const accounts = board.accounts.map(a => ({ a, tasks: a.tasks.filter(match) })).filter(x => x.tasks.length || (g === 'all' && x.a.overLimit.length));
   const showReplies = (g === 'all' || g === 'reply') && board.replies.length > 0;
-  const total = c.doneToday + c.open;
+  const todo = c.replies + c.overdue + c.dueToday;
+  const total = c.doneToday + todo;
   const progress = total > 0 ? Math.round((c.doneToday / total) * 100) : 0;
-  const clientCount = new Set(board.accounts.filter(a => a.tasks.length).map(a => a.client.id)).size;
   const noClients = Object.keys(data.clients).length === 0;
-  const stat = (key, label, v, color) => html`<button type="button" class="stat" aria-pressed=${g === key ? 'true' : 'false'} title=${g === key ? 'Show everything' : 'Show only these'} onClick=${() => setF({ group: g === key ? 'all' : key })}>
-    <span class="k">${color && html`<span class="dot" style=${{ background: color }}></span>`}${label}</span><span class="v">${fmtNum(v)}</span></button>`;
-  const types = [['all', 'All'], ['reply', 'Replies'], ['message', 'Messages'], ['invite', 'Invites'], ['touch', 'Touches'], ['reminder', 'Reminders']];
+  const go = (t, patch) => setF(Object.assign({ tab: t }, patch || {}));
+  const stat = (label, v, color, onClick, on) => html`<button type="button" class="stat" aria-pressed=${on ? 'true' : 'false'} onClick=${onClick}>
+    <span class="k"><span class="dot" style=${{ background: color }}></span>${label}</span><span class="v">${fmtNum(v)}</span></button>`;
+  const types = [['all', 'All'], ['reply', 'Replies'], ['message', 'Messages'], ['invite', 'Invites'], ['touch', 'Touches'], ['reminder', 'Reminders'], ['overdue', 'Overdue']];
+  const tabs = [['todo', 'To do', todo], ['waiting', 'Waiting for acceptance', c.pending], ['upcoming', 'Upcoming', c.upcoming], ['done', 'Done today', c.doneToday]];
 
   return html`<div class="page">
     <header class="page-head">
       <div>
         <p class="eyebrow">${fmtLong(TODAY)}</p>
-        <h1>Today's outreach</h1>
-        <p class="lede">${c.open === 0 ? 'Nothing due right now.' : plural(c.open, 'action') + ' across ' + plural(clientCount || (board.replies.length ? 1 : 0), 'client')}${c.overdue ? ' · ' + c.overdue + ' overdue' : ''}${c.replies ? ' · ' + plural(c.replies, 'reply', 'replies') + ' waiting' : ''}.</p>
+        <h1>Today</h1>
+        <p class="lede">${todo === 0 ? 'Nothing left to do right now.' : plural(todo, 'thing') + ' to do' + (c.overdue ? ', ' + c.overdue + ' overdue' : '')}${c.pending ? ' · ' + plural(c.pending, 'invite') + ' waiting for acceptance' : ''}.</p>
       </div>
       <div class="head-actions">
-        <button type="button" class="btn" onClick=${() => copyText(planText(board, data), "Today's plan")}><${Icon} n="copy" s=${14} />Copy today's plan</button>
-        <button type="button" class="btn primary" disabled=${c.open === 0} onClick=${() => UI.open('run', { key: '' })}><${Icon} n="zap" s=${14} />Start focus run</button>
+        <${HelpButton} view="today" />
+        <button type="button" class="btn" onClick=${() => copyText(planText(board, data), "Today's plan")}><${Icon} n="copy" s=${14} />Copy plan</button>
+        <button type="button" class="btn primary" disabled=${todo === 0} onClick=${() => UI.open('run', { key: '' })}><${Icon} n="zap" s=${14} />Focus run</button>
       </div>
     </header>
 
+    ${noClients ? html`<div class="panel"><${Empty} icon="briefcase" title="Add your first client"
+        action=${html`<div class="btn-row" style="justify-content:center"><${HelpButton} view="today" /><button type="button" class="btn primary" onClick=${() => UI.open('client', {})}><${Icon} n="plus" s=${14} />Add client</button></div>`}>
+        Each client gets one or more LinkedIn sending accounts. Then add prospects and this page fills itself.</${Empty}></div>` : html`
+
     <div class="stats">
-      ${stat('reply', 'Replies waiting', c.replies, 'var(--reply)')}
-      ${stat('overdue', 'Overdue', c.overdue, 'var(--overdue)')}
-      <div class="stat" style="cursor:default"><span class="k"><span class="dot" style="background:var(--today)"></span>Due today</span><span class="v">${fmtNum(c.dueToday)}</span></div>
-      <button type="button" class="stat" onClick=${() => { const el = document.getElementById('pending-panel'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}>
-        <span class="k"><span class="dot" style="background:var(--info)"></span>Pending invites</span><span class="v">${fmtNum(c.pending)}</span></button>
-      <div class="stat" style="cursor:default"><span class="k"><span class="dot" style="background:var(--good)"></span>Done today</span><span class="v">${fmtNum(c.doneToday)}</span></div>
+      ${stat('Replies waiting', c.replies, 'var(--reply)', () => go('todo', { group: g === 'reply' && tab === 'todo' ? 'all' : 'reply' }), tab === 'todo' && g === 'reply')}
+      ${stat('Overdue', c.overdue, 'var(--overdue)', () => go('todo', { group: g === 'overdue' && tab === 'todo' ? 'all' : 'overdue' }), tab === 'todo' && g === 'overdue')}
+      ${stat('Due today', c.dueToday, 'var(--today)', () => go('todo', { group: 'all' }), false)}
+      ${stat('Waiting for acceptance', c.pending, 'var(--info)', () => go('waiting'), tab === 'waiting')}
+      ${stat('Done today', c.doneToday, 'var(--good)', () => go('done'), tab === 'done')}
     </div>
 
     <div class="progress" aria-label="Today's progress">
       <div class="progress-track"><div class="progress-fill" style=${{ width: progress + '%' }}></div></div>
-      <span class="progress-text num">${c.doneToday} done · ${c.open} to go</span>
+      <span class="progress-text num">${c.doneToday} done · ${todo} to go</span>
+    </div>
+
+    <div class="tabs big" role="tablist">
+      ${tabs.map(([k, l, n]) => html`<button type="button" role="tab" key=${k} aria-selected=${tab === k ? 'true' : 'false'} onClick=${() => go(k)}>${l}<span class="n">${n}</span></button>`)}
     </div>
 
     <div class="toolbar">
       <${ClientSelect} id="today-client" cls="select sm" data=${data} value=${f.clientId} all=${true} onChange=${v => setF({ clientId: v, listId: '' })} />
       ${f.clientId && listsOf(data, f.clientId).length > 0 && html`<${ListSelect} id="today-list" cls="select sm" data=${data} clientId=${f.clientId} value=${f.listId} allLabel="All lists" onChange=${v => setF({ listId: v })} />`}
       <${MemberSelect} id="today-member" cls="select sm" settings=${data.settings} value=${f.operatorId} all=${true} allLabel="All team members" onChange=${v => setF({ operatorId: v })} />
-      <div class="seg" role="group" aria-label="Task type">
+      ${tab === 'todo' && html`<div class="seg" role="group" aria-label="Task type">
         ${types.map(([k, l]) => html`<button type="button" key=${k} aria-pressed=${g === k ? 'true' : 'false'} onClick=${() => setF({ group: k })}>${l}</button>`)}
-      </div>
+      </div>`}
     </div>
 
     ${board.hiddenClients.length > 0 && html`<p class="muted" style="font-size:12.5px">${plural(board.hiddenClients.length, 'paused client')} hidden: ${board.hiddenClients.map(id => (data.clients[id] || {}).name).join(', ')}.</p>`}
 
-    <div class="today-grid">
+    ${tab === 'waiting' ? html`<${WaitingTab} board=${board} settings=${data.settings} />`
+      : tab === 'upcoming' ? html`<${UpcomingTab} board=${board} />`
+      : tab === 'done' ? html`<${DoneTab} data=${data} f=${f} />`
+      : html`<div class="today-grid">
       <div class="stack-lg">
-        ${noClients && html`<div class="panel"><${Empty} icon="briefcase" title="Add your first client"
-            action=${html`<button type="button" class="btn primary" onClick=${() => UI.open('client', {})}><${Icon} n="plus" s=${14} />Add client</button>`}>
-            Each client gets one or more LinkedIn sending accounts. Then add prospects and this list fills itself.</${Empty}></div>`}
-
         ${showReplies && html`<section class="panel acct">
           <header class="acct-head"><div class="acct-title"><span class="pill tone-reply"><${Icon} n="reply" s=${12} />Replies waiting</span><span class="muted">Answer these first. The sequence has stopped for each of them.</span></div></header>
           ${board.replies.map(x => html`<${TaskRow} key=${x.key} task=${x} showClient=${true} />`)}
         </section>`}
-
         ${accounts.map(x => html`<${AccountGroup} key=${x.a.key} a=${x.a} tasks=${x.tasks} />`)}
-
-        ${!noClients && !showReplies && accounts.length === 0 && html`<div class="panel"><${Empty} icon="check" title=${g === 'all' ? "You're clear for today" : 'Nothing of this type is due'}>
-          ${c.upcoming ? plural(c.upcoming, 'task') + ' coming up in the next 7 days.' : 'Add prospects to keep the pipeline moving.'}</${Empty}></div>`}
-
-        <${Upcoming} board=${board} />
+        ${!showReplies && accounts.length === 0 && html`<div class="panel"><${Empty} icon="check" title=${g === 'all' ? 'All done for now' : 'Nothing of this type is due'}
+            action=${html`<div class="btn-row" style="justify-content:center">
+              ${c.pending > 0 && html`<button type="button" class="btn" onClick=${() => go('waiting')}>Check ${plural(c.pending, 'pending invite')}</button>`}
+              ${c.upcoming > 0 && html`<button type="button" class="btn" onClick=${() => go('upcoming')}>See upcoming</button>`}</div>`}>
+          ${c.upcoming ? plural(c.upcoming, 'task') + ' coming up in the next 14 days.' : 'Add prospects to keep the pipeline moving.'}</${Empty}></div>`}
       </div>
       <aside class="today-side">
         <${SchedulePanel} board=${board} />
-        <div id="pending-panel"><${PendingPanel} board=${board} settings=${data.settings} /></div>
-        <${RoutinePanel} settings=${data.settings} />
+        ${c.pending > 0 && html`<section class="panel panel-pad stack">
+          <div class="task-meta"><span class="pill tone-info"><${Icon} n="clock" s=${12} />${plural(c.pending, 'invite')} waiting</span>${c.stale > 0 && html`<span class="pill tone-overdue">${c.stale} stale</span>`}</div>
+          <p class="soft" style="font-size:13px">Mark people as Accepted once they connect, so their first message comes up here.</p>
+          <button type="button" class="btn sm" style="align-self:flex-start" onClick=${() => go('waiting')}><${Icon} n="userCheck" s=${14} />Record acceptances</button>
+        </section>`}
       </aside>
-    </div>
+    </div>`}`}
   </div>`;
 }
 
@@ -307,7 +426,7 @@ function AcceptanceModal({ accountKey }) {
   const chosen = list.filter(x => sel.has(x.key));
   const accept = async () => {
     setBusy(true);
-    await Act.bulk(chosen.map(x => fresh(x.p)), p => actAccept(p, seqFor(p), when, me()), n => plural(n, 'prospect') + ' marked accepted. Their first messages are on the Today list.');
+    await Act.bulk(chosen.map(x => fresh(x.p)), p => actAccept(p, seqFor(p), when, me()), n => plural(n, 'prospect') + ' marked accepted. Their first messages are now in To do.');
     setSel(new Set()); setBusy(false);
   };
   const withdraw = async () => {
