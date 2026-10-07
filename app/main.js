@@ -104,10 +104,56 @@ function Rail({ counts }) {
         <${MemberSelect} id="rail-me" cls="select sm" settings=${data.settings} value=${UI.me} noneLabel="Pick your name" onChange=${x => { pref('me', x || null); UI.set({ me: x }); }} />`
         : html`<button type="button" class="btn sm" onClick=${() => UI.go('settings')}><${Icon} n="users" s=${14} />Add your team</button>`}
       <${ThemeToggle} />
-      <div class="sync"><span class=${'dot ' + (Store.demoOn ? 'demo' : Store.mode === 'local' ? 'local' : '')}></span>
-        ${Store.demoOn ? 'Sample data' : Store.mode === 'cloud' ? 'Shared with your team' : 'Saved in this browser'}</div>
+      <${SyncStatus} />
     </div>
   </nav>`;
+}
+
+function SyncStatus() {
+  if (Store.mode === 'server') {
+    const off = Store.sync.state === 'offline';
+    const ago = Store.sync.last ? Math.max(0, Math.round((Date.now() - Store.sync.last) / 1000)) : null;
+    return html`<button type="button" class="sync linkish" title=${off ? 'Cannot reach the shared workspace. Retrying.' : 'Saved on Cloudflare. Everyone with the passcode sees the same data.'} onClick=${() => Store.real && Store.real.backend.sync()}>
+      <span class=${'dot ' + (off ? 'local' : '')}></span>${off ? 'Offline · retrying' : 'Shared · synced' + (ago != null && ago > 15 ? ' ' + (ago < 120 ? ago + 's' : Math.round(ago / 60) + 'm') + ' ago' : '')}</button>`;
+  }
+  return html`<div class="sync"><span class=${'dot ' + (Store.demoOn ? 'demo' : Store.mode === 'local' ? 'local' : '')}></span>
+    ${Store.demoOn ? 'Sample data' : Store.mode === 'cloud' ? 'Shared with your team' : 'Saved in this browser only'}</div>`;
+}
+
+/* Team passcode screen for the shared Cloudflare workspace. */
+function Gate() {
+  const [key, setKey] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(Store.gateError || '');
+  const n = Object.keys(localDocs()).length;
+  const submit = async e => {
+    e.preventDefault();
+    const k = key.trim();
+    if (!k) return;
+    setBusy(true); setErr('');
+    const r = await checkPasscode(k);
+    setBusy(false);
+    if (r === 'wrong') { setErr('That passcode is not right. Check with whoever set up the desk.'); return; }
+    if (r === 'down') { setErr('Could not reach the shared workspace. Check your internet connection and try again.'); return; }
+    pref('workspaceKey', k);
+    pref('forceLocal', null);
+    Store.gateError = '';
+    connectServer(k);
+  };
+  return html`<div class="gate">
+    <form class="gate-card" onSubmit=${submit}>
+      <span class="brand-mark" style="width:44px;height:44px;border-radius:12px"><${Icon} n="send" s=${20} /></span>
+      <h1>Outreach Desk</h1>
+      <p class="soft">This workspace is shared by your team. Enter the team passcode to open it on this browser. You only need to do this once per browser.</p>
+      <label class="field"><span>Team passcode</span>
+        <input id="gate-key" class="input" type="password" autocomplete="current-password" data-autofocus autofocus value=${key} onInput=${ev => setKey(ev.target.value)} /></label>
+      ${err && html`<div class="note-box bad">${err}</div>`}
+      <button type="submit" class="btn primary" disabled=${busy || !key.trim()}>${busy ? 'Checking…' : 'Open shared workspace'}</button>
+      <p class="muted" style="font-size:12.5px">Don't have it? Ask the person who set up the desk. The passcode is set in Cloudflare, not here.</p>
+      ${n > 0 && html`<p class="muted" style="font-size:12.5px">This browser also has ${plural(n, 'record')} saved from before. After you sign in you can copy them into the shared workspace.</p>`}
+      <button type="button" class="btn sm ghost" onClick=${() => { pref('forceLocal', true); startLocal(); }}>Use this browser only instead</button>
+    </form>
+  </div>`;
 }
 
 async function startWorkspace() {
@@ -128,6 +174,14 @@ function Banners() {
         ${Store.demoAuto
           ? html`<button type="button" class="btn primary" onClick=${startWorkspace}>Set up my workspace</button>`
           : html`<button type="button" class="btn" onClick=${() => exitDemo(true)}>Back to my workspace</button>`}
+      </div></div>`);
+  } else if (Store.mode === 'server' && Store.localPending) {
+    const lp = Store.localPending, up = Store.uploadProgress;
+    out.push(html`<div class="banner" key="upload"><${Icon} n="upload" />
+      <p><strong>This browser has data from before you switched to the shared workspace:</strong> ${[lp.clients && plural(lp.clients, 'client'), lp.sequences && plural(lp.sequences, 'sequence'), lp.prospects && plural(lp.prospects, 'prospect')].filter(Boolean).join(', ') || plural(lp.total, 'record')}. Copy it in so the whole team sees it. Anything already shared is left as it is.</p>
+      <div class="btn-row">
+        <button type="button" class="btn primary" disabled=${!!up} onClick=${uploadLocalData}>${up ? 'Uploading ' + up.done + ' of ' + up.total + '…' : 'Upload to shared workspace'}</button>
+        <button type="button" class="btn sm ghost" disabled=${!!up} onClick=${() => { Store.localPending = null; bump(); }}>Not now</button>
       </div></div>`);
   } else if (Store.mode === 'local' && !hideLocal) {
     out.push(html`<div class="banner local" key="local"><${Icon} n="alert" />
@@ -165,6 +219,7 @@ function App() {
   const board = useMemo(() => (loading ? null : buildBoard(data, { today: TODAY })), [data, TODAY, loading]);
   const counts = board ? board.counts : { open: 0 };
   let view;
+  if (Store.mode === 'gate') return html`<div><${Gate} /><${Toasts} /></div>`;
   if (loading) {
     view = html`<div class="boot"><div><div class="spinner"></div>${Store.mode === 'boot' ? 'Connecting…' : 'Loading your workspace…'}</div></div>`;
   } else if (UI.view === 'prospects') view = html`<${ProspectsView} />`;

@@ -98,6 +98,125 @@ function LocalBackend(opts) {
   };
 }
 
+/* Shared storage on the Cloudflare site (Pages Function + D1), protected by the team passcode.
+   Keeps a local copy, writes through to the server, and polls for teammates' changes. */
+function HttpBackend(opts) {
+  const base = opts.base || '/api/';
+  const key = opts.key;
+  const docs = {};
+  const ver = {};
+  const pending = new Map();
+  const subs = new Map();
+  let since = 0, loaded = false, timer = null, syncing = null, stopped = false;
+  const colOf = path => path.slice(0, path.lastIndexOf('/'));
+  const list = col => Object.keys(docs).filter(p => colOf(p) === col).map(p => [p.slice(p.lastIndexOf('/') + 1), docs[p]]);
+  const notify = col => { const s = subs.get(col); if (s) for (const cb of Array.from(s)) cb(list(col), { fromCache: false }); };
+  const status = (st, extra) => { Store.sync = Object.assign({}, Store.sync, { state: st }, extra || {}); bump(); };
+  async function api(method, route, body) {
+    let r;
+    try {
+      r = await fetch(base + route, { method, cache: 'no-store', headers: { 'x-workspace-key': key, 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
+    } catch (e) { throw { code: 'unavailable', message: 'Network error' }; }
+    if (r.status === 401) { if (opts.onAuthFail) opts.onAuthFail(); throw { code: 'invalid_argument', message: 'Wrong passcode' }; }
+    if (r.status === 413) throw { code: 'quota_exceeded', message: 'Too large' };
+    if (!r.ok) throw { code: r.status >= 500 ? 'unavailable' : 'invalid_argument', message: 'HTTP ' + r.status };
+    return r.json();
+  }
+  function apply(rows) {
+    const touched = new Set();
+    for (const d of rows) {
+      if (pending.has(d.path)) continue;
+      if (ver[d.path] && ver[d.path] >= d.updated) continue;
+      ver[d.path] = d.updated;
+      if (d.deleted) { if (d.path in docs) { delete docs[d.path]; touched.add(colOf(d.path)); } }
+      else { docs[d.path] = d.data; touched.add(colOf(d.path)); }
+    }
+    return touched;
+  }
+  function sync() {
+    if (syncing || stopped) return syncing;
+    syncing = (async () => {
+      try {
+        let cursor = Math.max(0, since - 5000), more = true;
+        const touched = new Set();
+        while (more) {
+          const res = await api('GET', 'sync?since=' + cursor);
+          apply(res.docs).forEach(c => touched.add(c));
+          const top = res.docs.reduce((m, d) => Math.max(m, d.updated), cursor);
+          since = Math.max(since, top);
+          cursor = top;
+          more = !!res.more && res.docs.length > 0;
+        }
+        const first = !loaded;
+        loaded = true;
+        if (first) { for (const col of subs.keys()) notify(col); }
+        else touched.forEach(notify);
+        status('ok', { last: Date.now() });
+      } catch (e) {
+        status('offline', { error: e && e.message });
+        if (!loaded && e && e.code !== 'invalid_argument') {
+          loaded = true;
+          for (const col of subs.keys()) notify(col);
+        }
+      } finally { syncing = null; }
+    })();
+    return syncing;
+  }
+  function schedule() {
+    clearInterval(timer);
+    timer = setInterval(() => { if (document.visibilityState === 'visible') sync(); }, 8000);
+  }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') sync(); });
+  window.addEventListener('focus', () => sync());
+  window.addEventListener('online', () => sync());
+  async function write(path, fn, local) {
+    const n = (pending.get(path) || 0) + 1;
+    pending.set(path, n);
+    const had = path in docs, prev = docs[path];
+    local();
+    notify(colOf(path));
+    try {
+      const res = await fn();
+      ver[path] = Math.max(ver[path] || 0, res.updated || 0);
+      status('ok', { last: Date.now() });
+    } catch (e) {
+      if (had) docs[path] = prev; else delete docs[path];
+      notify(colOf(path));
+      status('offline', { error: e && e.message });
+      throw e;
+    } finally {
+      const left = (pending.get(path) || 1) - 1;
+      if (left <= 0) pending.delete(path); else pending.set(path, left);
+    }
+    setTimeout(sync, 1500);
+  }
+  return {
+    kind: 'server',
+    sync,
+    listen(col, onDocs) {
+      if (!subs.has(col)) subs.set(col, new Set());
+      subs.get(col).add(onDocs);
+      if (loaded) Promise.resolve().then(() => { const s = subs.get(col); if (s && s.has(onDocs)) onDocs(list(col), { fromCache: false }); });
+      else { sync(); schedule(); }
+      return () => { const s = subs.get(col); if (s) s.delete(onDocs); };
+    },
+    set(path, data) {
+      const body = clone(data);
+      return write(path, () => api('PUT', 'doc?path=' + encodeURIComponent(path), body), () => { docs[path] = body; });
+    },
+    del(path) {
+      return write(path, () => api('DELETE', 'doc?path=' + encodeURIComponent(path)), () => { delete docs[path]; });
+    },
+    has(path) { return path in docs; },
+    async batch(puts, dels) {
+      const res = await api('POST', 'batch', { puts: puts || [], dels: dels || [] });
+      setTimeout(sync, 500);
+      return res;
+    },
+    stop() { stopped = true; clearInterval(timer); },
+  };
+}
+
 /* A live view of one backend: clients, sequences, settings and every client's prospects. */
 function Dataset(backend, onChange) {
   const ds = { backend, clients: {}, sequences: {}, prospects: {}, settingsDoc: null, got: {}, definitive: {}, pGot: {}, ver: 0 };
@@ -139,7 +258,7 @@ function Dataset(backend, onChange) {
       changed();
     }, onErr));
   };
-  ds.stop = () => { subs.forEach(u => u()); subs = []; Object.values(pSubs).forEach(u => u()); pSubs = {}; };
+  ds.stop = () => { subs.forEach(u => u()); subs = []; Object.values(pSubs).forEach(u => u()); pSubs = {}; if (backend.stop) backend.stop(); };
   ds.ready = () => !!(ds.got.clients && ds.got.sequences && ds.got.meta);
   ds.allLoaded = () => ds.ready() && Object.keys(ds.clients).every(cid => ds.pGot[cid]);
   return ds;
@@ -147,7 +266,12 @@ function Dataset(backend, onChange) {
 
 /* ---------- app-level store ---------- */
 const Store = {
-  mode: 'boot',            // 'boot' | 'cloud' | 'local'
+  mode: 'boot',            // 'boot' | 'cloud' (Claude link) | 'server' (Cloudflare D1) | 'gate' (needs passcode) | 'local'
+  sync: { state: 'ok' },
+  localPending: null,
+  uploadProgress: null,
+  serverInfo: null,
+  gateError: '',
   real: null,
   demo: null,
   demoOn: false,
@@ -241,21 +365,120 @@ function exitDemo(remember) {
   bump();
 }
 
+const LOCAL_KEY = 'fod.data.v1';
+function localDocs() { try { return JSON.parse(localStorage.getItem(LOCAL_KEY) || '{}') || {}; } catch (e) { return {}; } }
+function startLocal() {
+  Store.mode = 'local';
+  Store.real = Dataset(LocalBackend({ key: LOCAL_KEY, persist: true, onError: () => UI.toast('This browser refused to save. Export a backup from Settings.', { bad: true }) }), onDatasetChange);
+  Store.real.start();
+  bump();
+}
+/* Is this page served by the Cloudflare site with shared storage? */
+async function probeServer() {
+  if (!/^https?:$/.test(location.protocol)) return null;
+  try {
+    const r = await fetch('/api/status', { cache: 'no-store' });
+    if (!r.ok) return null;
+    const j = await r.json();
+    return j && j.app === 'fastex-outreach-desk' ? j : null;
+  } catch (e) { return null; }
+}
+/* Checks a passcode against the server without loading anything. */
+async function checkPasscode(key) {
+  try {
+    const r = await fetch('/api/sync?since=' + (Date.now() + 86400000), { cache: 'no-store', headers: { 'x-workspace-key': key } });
+    if (r.status === 401) return 'wrong';
+    if (!r.ok) return 'down';
+    return 'ok';
+  } catch (e) { return 'down'; }
+}
+function connectServer(key) {
+  if (Store.real) Store.real.stop();
+  Store.mode = 'server';
+  Store.decided = false;
+  const backend = HttpBackend({ base: '/api/', key, onAuthFail: () => {
+    pref('workspaceKey', null);
+    if (Store.real) Store.real.stop();
+    Store.real = null;
+    Store.mode = 'gate';
+    Store.gateError = 'The team passcode has changed. Enter the new one.';
+    bump();
+  } });
+  Store.real = Dataset(backend, onDatasetChange);
+  Store.real.start();
+  const local = localDocs();
+  const n = Object.keys(local).length;
+  Store.localPending = n && !pref('localUploaded') ? summarizeDocs(local) : null;
+  bump();
+}
+function summarizeDocs(d) {
+  const keys = Object.keys(d);
+  return {
+    total: keys.length,
+    clients: keys.filter(k => /^clients\/[^/]+$/.test(k)).length,
+    prospects: keys.filter(k => /\/prospects\//.test(k)).length,
+    sequences: keys.filter(k => /^sequences\//.test(k)).length,
+  };
+}
+/* Copies this browser's old saved data into the shared workspace. Never overwrites what is already shared. */
+async function uploadLocalData() {
+  const ds = Store.real;
+  if (!ds || ds.backend.kind !== 'server' || !W.guard()) return;
+  const local = localDocs();
+  const paths = Object.keys(local).filter(p => !ds.backend.has(p));
+  const skipped = Object.keys(local).length - paths.length;
+  let done = 0;
+  try {
+    for (let i = 0; i < paths.length; i += 80) {
+      const chunk = paths.slice(i, i + 80).map(p => ({ path: p, data: stripDoc(local[p]) }));
+      await ds.backend.batch(chunk, []);
+      done += chunk.length;
+      Store.uploadProgress = { done, total: paths.length };
+      bump();
+    }
+  } catch (e) {
+    Store.uploadProgress = null;
+    UI.toast('Upload stopped after ' + done + ' records. Check your connection and try again.', { bad: true });
+    return;
+  }
+  Store.uploadProgress = null;
+  pref('localUploaded', true);
+  Store.localPending = null;
+  await ds.backend.sync();
+  UI.toast('Uploaded ' + plural(done, 'record') + ' to the shared workspace' + (skipped ? ' (' + skipped + ' were already there)' : '') + '.');
+}
+function forgetPasscode() {
+  pref('workspaceKey', null);
+  if (Store.real) Store.real.stop();
+  Store.real = null;
+  Store.mode = 'gate';
+  Store.gateError = '';
+  bump();
+}
+
 async function bootStore() {
   const db = await capability('db');
   if (db) {
     Store.mode = 'cloud';
     Store.real = Dataset(CloudBackend(db), onDatasetChange);
-  } else {
-    Store.mode = 'local';
-    Store.real = Dataset(LocalBackend({ key: 'fod.data.v1', persist: true, onError: () => UI.toast('This browser refused to save. Export a backup from Settings.', { bad: true }) }), onDatasetChange);
+    Store.real.start();
+    bump();
+    const user = await capability('user');
+    if (user && typeof user.can === 'function') {
+      try { if ((await user.can('data.write')) === false) { Store.readOnly = true; bump(); } } catch (e) { /* unknown: let writes decide */ }
+    }
+    return;
   }
-  Store.real.start();
-  bump();
-  const user = await capability('user');
-  if (user && typeof user.can === 'function') {
-    try { if ((await user.can('data.write')) === false) { Store.readOnly = true; bump(); } } catch (e) { /* unknown: let writes decide */ }
+  const st = await probeServer();
+  Store.serverInfo = st;
+  if (st && st.configured && !pref('forceLocal')) {
+    const key = pref('workspaceKey');
+    if (key) { connectServer(key); return; }
+    Store.mode = 'gate';
+    bump();
+    return;
   }
+  startLocal();
 }
 
 /* ---------- writes ---------- */
@@ -263,7 +486,9 @@ function stripDoc(doc) { const d = JSON.parse(JSON.stringify(doc)); delete d.id;
 function prospectPath(p) { return 'clients/' + p.clientId + '/prospects/' + p.id; }
 function handleWriteError(e) {
   const c = errCode(e);
-  if (c === 'invalid_argument' && Store.mode === 'cloud' && !Store.demoOn) {
+  if (Store.mode === 'server' && c === 'unavailable') {
+    UI.toast('Could not reach the shared workspace. Check your internet connection; nothing was saved for that change.', { bad: true });
+  } else if (c === 'invalid_argument' && Store.mode === 'cloud' && !Store.demoOn) {
     Store.readOnly = true;
     UI.toast('That change was refused. You may only have view access to this workspace.', { bad: true });
   } else if (c === 'quota_exceeded') {

@@ -603,7 +603,8 @@ function SettingsView() {
   const toggleDay = d => { const set = new Set(s.workDays || []); if (set.has(d)) set.delete(d); else set.add(d); save({ workDays: Array.from(set).sort() }); };
   const docCount = 1 + Object.keys(data.clients).length + Object.keys(data.seqs).length + data.prospects.length;
   const onRestore = async e => { const f = e.target.files && e.target.files[0]; if (!f) return; restoreBackup(await readFileText(f)); e.target.value = ''; };
-  const storage = Store.mode === 'cloud' ? 'Saved in this page\'s shared storage. Everyone you share it with (with edit access) sees the same data, live.'
+  const storage = Store.mode === 'server' ? 'Saved in your shared Cloudflare workspace. Everyone who opens the desk with the team passcode sees the same data; changes from teammates appear within a few seconds.'
+    : Store.mode === 'cloud' ? 'Saved in this page\'s shared storage. Everyone you share it with (with edit access) sees the same data, live.'
     : 'Saved in this browser only. Export a backup regularly, or open the published page to share with your team.';
   return html`<div class="page">
     <header class="page-head"><div><p class="eyebrow">${s.agencyName || 'Workspace'}</p><h1>Settings</h1></div><div class="head-actions"><${HelpButton} view="settings" /></div></header>
@@ -671,6 +672,11 @@ function SettingsView() {
             <label class="field"><span>Restore a backup <span class="hint">adds or overwrites records with the same id</span></span>
               <input id="set-restore" type="file" accept=".json,application/json" class="input" onChange=${onRestore} /></label>
             ${Store.mode === 'cloud' && html`<p class="muted" style="font-size:12.5px">Shared storage holds up to about 25,000 records.</p>`}
+            ${Store.mode === 'server' && html`<div class="btn-row">
+              ${Object.keys(localDocs()).length > 0 && html`<button type="button" class="btn" onClick=${uploadLocalData}><${Icon} n="upload" s=${14} />Upload this browser's old data</button>`}
+              <button type="button" class="btn ghost" onClick=${() => UI.open('confirm', { title: 'Sign out on this browser?', body: 'The desk will ask for the team passcode again next time. Shared data is not affected.', confirmLabel: 'Sign out', onConfirm: forgetPasscode })}><${Icon} n="logout" s=${14} />Sign out on this browser</button>
+            </div>`}
+            ${Store.mode === 'local' && Store.serverInfo && Store.serverInfo.configured && html`<button type="button" class="btn" onClick=${() => { pref('forceLocal', null); forgetPasscode(); }}><${Icon} n="users" s=${14} />Switch to the shared workspace</button>`}
           </div>
         </section>
         <section class="panel">

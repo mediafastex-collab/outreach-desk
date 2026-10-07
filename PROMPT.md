@@ -192,6 +192,12 @@ No automation, scraping or LinkedIn login. No deal pipeline, invoicing or email 
 - **Focus run profile strip.** Position, company, headline and location at the top of each card, editable in place, highlighted when missing.
 - **Human pacing between sends.** After an invite or message is marked sent, that LinkedIn account waits a random 5–20 seconds (new random value each time, never under 5) before its next "Copy & open" or "Sent", with a countdown. Configurable in Settings; other accounts are unaffected.
 
+## Additions (round 6)
+
+- **Shared storage on Cloudflare.** A Pages Function (`functions/api/[[path]].js`) stores every document in a D1 database. Every request needs the team passcode (secret `WORKSPACE_KEY`), compared in constant time; paths and document sizes are validated. The app syncs: optimistic local writes, server confirms, and it polls for teammates' changes every 8 seconds while visible and on focus. Failed writes roll back and show an error.
+- **Passcode screen** once per browser, "Sign out on this browser" in Settings, and a "Use this browser only" escape hatch.
+- **Upload old browser data.** A browser that saved data before the switch offers "Upload to shared workspace"; it copies only records the shared workspace doesn't already have.
+
 ## Deliverables
 
 The working app, a short daily routine inside the app, and a list of assumptions made.
