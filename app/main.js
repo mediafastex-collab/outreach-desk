@@ -140,7 +140,7 @@ function Gate() {
     Store.gateError = '';
     connectServer(k);
   };
-  return html`<div class="gate">
+  return html`<div class="gate-screen">
     <form class="gate-card" onSubmit=${submit}>
       <span class="brand-mark" style="width:44px;height:44px;border-radius:12px"><${Icon} n="send" s=${20} /></span>
       <h1>Outreach Desk</h1>
