@@ -130,13 +130,14 @@ const STATUSES = {
 const STATUS_ORDER = ['queued', 'invited', 'active', 'replied', 'interested', 'nurture', 'meeting', 'not_interested', 'finished', 'withdrawn', 'paused'];
 const OUTCOMES = ['interested', 'meeting', 'nurture', 'not_interested'];
 
-const DEFAULT_SETTINGS = { agencyName: 'Fastex', team: [], workDays: [1, 2, 3, 4, 5], staleDays: 21, reminderTime: '09:30' };
+const DEFAULT_SETTINGS = { agencyName: 'Fastex', team: [], workDays: [1, 2, 3, 4, 5], staleDays: 21, reminderTime: '09:30', pacingOn: true, pacingMin: 5, pacingMax: 20 };
+const PACING_FLOOR = 5;
 const SENDER_DEFAULTS = { dailyInvites: 20, weeklyInvites: 100, dailyMessages: 50 };
 const CLIENT_COLORS = 8;
 
 const TEMPLATE_VARS = [
   ['firstName', 'First name'], ['lastName', 'Last name'], ['fullName', 'Full name'], ['company', 'Company'],
-  ['title', 'Headline'], ['location', 'Location'], ['senderFirstName', 'Sender first name'],
+  ['position', 'Position'], ['title', 'Headline'], ['location', 'Location'], ['senderFirstName', 'Sender first name'],
   ['senderName', 'Sender name'], ['clientName', 'Client'],
 ];
 
@@ -328,12 +329,94 @@ function cleanCompany(name) {
     .trim();
 }
 
+/* ---------- profile details from LinkedIn ---------- */
+/* "Head of Growth at Acme | B2B SaaS" → "Head of Growth" */
+function positionFromHeadline(h) {
+  const m = String(h || '').match(/^(.{2,80}?)\s+(?:at|@)\s+[^|·•,]{2,}/i);
+  return m ? m[1].trim() : '';
+}
+function companyFromHeadline(h) {
+  const m = String(h || '').match(/\s(?:at|@)\s+([^|·•,(]{2,60})/i);
+  return m ? m[1].trim() : '';
+}
+/* "Position · Company" line for lists. */
+function roleLine(p) {
+  const pos = p.position || positionFromHeadline(p.title);
+  if (pos && p.company) return pos + ' at ' + p.company;
+  return [pos || p.title, p.company].filter(Boolean).join(' · ');
+}
+/* Reads what the "Copy to Outreach Desk" bookmark copied (FOD1:{json}),
+   or text copied by hand from the top of a LinkedIn profile.
+   Returns only the fields it found: { url, firstName, lastName, title, position, company, location }. */
+function parseProfileText(raw) {
+  const text = String(raw || '').trim();
+  if (!text) return {};
+  const out = {};
+  const m = text.match(/FOD1:(\{[\s\S]*\})/);
+  if (m) {
+    let d = null;
+    try { d = JSON.parse(m[1]); } catch (e) { d = null; }
+    if (d) {
+      const n = splitName(d.name || '');
+      if (n.firstName) { out.firstName = n.firstName; out.lastName = n.lastName; }
+      const norm = normalizeLinkedIn(d.url);
+      if (norm) out.url = norm.url;
+      if (d.headline) out.title = String(d.headline).trim();
+      if (d.position) out.position = String(d.position).trim();
+      if (d.company) out.company = cleanCompany(d.company);
+      if (d.location) out.location = String(d.location).replace(/\s*·?\s*Contact info\s*$/i, '').trim();
+      if (!out.position && out.title) out.position = positionFromHeadline(out.title);
+      if (!out.company && out.title) out.company = companyFromHeadline(out.title);
+      return out;
+    }
+  }
+  const urlHit = text.match(/https?:\/\/[^\s]*linkedin\.com\/(?:in|pub|sales\/lead)\/[^\s]+/i);
+  if (urlHit && normalizeLinkedIn(urlHit[0])) out.url = normalizeLinkedIn(urlHit[0]).url;
+  const noise = /^(she\/her|he\/him|they\/them|he\/they|she\/they)$|^·?\s*(1st|2nd|3rd\+?)( degree connection)?$|^\d[\d,+]*\s+(connections|followers)$|^(500\+ connections)$|^(contact info|message|connect|follow|more|pending|view profile|open to|show all.*|verified|premium|following|mutual connections?.*|.*mutual connections?)$|linkedin\.com|^https?:/i;
+  const lines = text.split(/\r?\n/).map(l => l.replace(/\s+/g, ' ').trim()).filter(l => l && !noise.test(l) && l.length < 220);
+  if (!lines.length) return out;
+  let i = 0;
+  const looksName = l => /^[\p{L}][\p{L}'’.\- ]{1,60}$/u.test(l) && l.split(' ').length <= 6 && !/\s(at|@)\s/i.test(l);
+  while (i < lines.length && !looksName(lines[i])) i++;
+  if (i < lines.length) {
+    const n = splitName(lines[i].replace(/\s*\(.*?\)\s*/g, ' '));
+    out.firstName = n.firstName; out.lastName = n.lastName;
+    i++;
+  } else i = 0;
+  const rest = lines.slice(i);
+  let locIdx = rest.findIndex(l => /contact info$/i.test(l));
+  if (locIdx === -1) locIdx = rest.findIndex((l, k) => k > 0 && !/[|@]/.test(l) && l.length < 80 && /\b(area|metropolitan|region|india|united states|united kingdom|canada|germany|uae|australia|singapore)\b/i.test(l));
+  if (locIdx !== -1) out.location = rest[locIdx].replace(/\s*·?\s*Contact info\s*$/i, '').trim();
+  const head = rest.find((l, k) => k !== locIdx);
+  if (head) {
+    out.title = head;
+    const pos = positionFromHeadline(head);
+    const comp = companyFromHeadline(head);
+    if (pos) out.position = pos;
+    if (comp) out.company = cleanCompany(comp);
+  }
+  /* "Position" followed by "Company · Full-time" (copied from Experience) */
+  for (let k = 0; k < rest.length - 1; k++) {
+    const mm = rest[k + 1].match(/^(.{2,60}?)\s+·\s+(full-time|part-time|contract|freelance|self-employed|internship)/i);
+    if (mm) { out.position = out.position || rest[k]; out.company = out.company || cleanCompany(mm[1]); break; }
+  }
+  if (!out.company && head) {
+    const after = rest.filter((l, k) => k !== locIdx && l !== head);
+    if (after[0] && after[0].length <= 60 && !/university|college|school|institute|academy/i.test(after[0])) out.company = cleanCompany(after[0]);
+  }
+  if (!out.position && out.title) {
+    const first = out.title.split(/\s[|·•]\s|\s-\s/)[0].trim();
+    if (first && first.length <= 60 && first !== out.company) out.position = first;
+  }
+  return out;
+}
+
 /* ---------- templates ---------- */
 function templateValues(p, client, sender) {
   const sn = (sender && sender.name) || '';
   return {
     firstName: p.firstName, lastName: p.lastName, fullName: [p.firstName, p.lastName].filter(Boolean).join(' '),
-    company: p.company, title: p.title, location: p.location,
+    company: p.company, title: p.title, position: p.position || positionFromHeadline(p.title), location: p.location,
     senderName: sn, senderFirstName: sn.split(' ')[0], clientName: client && client.name,
   };
 }
@@ -585,7 +668,7 @@ function newProspect(f, ctx) {
     id: prospectDocId(f.norm.key),
     clientId: f.clientId, senderId: f.senderId || null, sequenceId: seq ? seq.id : null, listId: f.listId || null,
     firstName: String(f.firstName || '').trim(), lastName: String(f.lastName || '').trim(),
-    title: String(f.title || '').trim(), company: String(f.company || '').trim(),
+    title: String(f.title || '').trim(), position: String(f.position || '').trim(), company: String(f.company || '').trim(),
     location: String(f.location || '').trim(), email: String(f.email || '').trim(),
     url: f.norm.url, urlKey: f.norm.key, urlKind: f.norm.kind,
     tags: Array.isArray(f.tags) ? f.tags : String(f.tags || '').split(',').map(t => t.trim()).filter(Boolean),
@@ -979,7 +1062,8 @@ const IMPORT_FIELDS = [
   { key: 'fullName', label: 'Full name', re: /^(full[\s_-]*)?name$|^contact$|^person$|^lead$|^prospect$/i },
   { key: 'firstName', label: 'First name', re: /first/i },
   { key: 'lastName', label: 'Last name', re: /last|surname|family/i },
-  { key: 'title', label: 'Headline / title', re: /title|headline|position|role|job/i },
+  { key: 'title', label: 'Headline', re: /headline|summary|tagline/i },
+  { key: 'position', label: 'Position / job title', re: /title|position|role|job|designation/i },
   { key: 'company', label: 'Company', re: /company|organi[sz]ation|employer|account/i, not: /url|linkedin|website|domain|size|industry|id$/i },
   { key: 'location', label: 'Location', re: /location|city|country|region|geo/i },
   { key: 'email', label: 'Email', re: /e-?mail/i },

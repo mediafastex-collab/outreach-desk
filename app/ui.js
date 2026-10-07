@@ -390,3 +390,95 @@ function applyTheme(t) {
   } catch (e) { /* ignore */ }
 }
 applyTheme(pref('theme'));
+
+/* ---------- "Copy to Outreach Desk" bookmark (runs on a LinkedIn profile the user is viewing) ---------- */
+const BOOKMARKLET_SRC = "(function(){var href=location.href;if(!/linkedin\\.com\\/(in|pub|sales\\/lead)\\//i.test(href)){alert('Open a LinkedIn profile first, then click this bookmark.');return;}" +
+  "function t(el){return el?(el.innerText||el.textContent||'').replace(/\\s+/g,' ').trim():'';}" +
+  "var main=document.querySelector('main')||document.body;" +
+  "var name=t(main.querySelector('h1'))||(document.title.split('|')[0]||'').replace(/^\\(\\d+\\)\\s*/,'').trim();" +
+  "var headline=t(main.querySelector('.text-body-medium'));" +
+  "var loc=t(main.querySelector('span.text-body-small.inline'));" +
+  "var company='';var cb=main.querySelector('[aria-label^=\"Current company\"]');" +
+  "if(cb){company=(cb.getAttribute('aria-label')||'').replace(/^Current company:\\s*/i,'').replace(/\\.\\s*Click.*$/i,'').trim();}" +
+  "var position='';var an=document.getElementById('experience');var sec=an?an.closest('section'):null;" +
+  "if(sec){var li=sec.querySelector('li');if(li){var sp=function(n){return [].slice.call(n.querySelectorAll('span[aria-hidden=\"true\"]')).map(t).filter(Boolean);};var p=sp(li);" +
+  "var first=(p[1]||'').split('\\u00b7')[0].trim();var grouped=!!li.querySelector('ul li')&&/^(full-time|part-time|contract|freelance|internship|self-employed|\\d+\\s*(yrs?|mos?))/i.test(first);" +
+  "if(grouped){if(!company)company=p[0];var sub=li.querySelector('ul li');if(sub){var q=sp(sub);position=q[0]||'';}}" +
+  "else{position=p[0]||'';if(!company&&p[1])company=p[1].split('\\u00b7')[0].trim();}}}" +
+  "var out='FOD1:'+JSON.stringify({v:1,url:href.split('?')[0].split('#')[0],name:name,headline:headline,position:position,company:company,location:loc});" +
+  "function ok(){alert('Copied '+(name||'this profile')+'. Now paste it into Outreach Desk.');}" +
+  "function fb(){prompt('Copy this, then paste it into Outreach Desk:',out);}" +
+  "try{navigator.clipboard.writeText(out).then(ok,fb);}catch(e){fb();}})();";
+const BOOKMARKLET_HREF = 'javascript:' + encodeURIComponent(BOOKMARKLET_SRC);
+
+function BookmarkletModal() {
+  return html`<${Modal} title="One-click profile copy" sub="Copies a LinkedIn profile's name, headline, position, company and location so you don't type them." size="narrow"
+    foot=${html`<button type="button" class="btn primary" onClick=${() => UI.close()}>Done</button>`}>
+    <ol class="how-list">
+      <li>Show your bookmarks bar (Chrome: <span class="mono">Cmd+Shift+B</span>, Windows: <span class="mono">Ctrl+Shift+B</span>).</li>
+      <li>Drag this button onto the bookmarks bar:
+        <div style="margin:10px 0"><a class="btn primary bm-link" href=${BOOKMARKLET_HREF} onClick=${e => { e.preventDefault(); UI.toast('Drag the button to your bookmarks bar. Clicking it here does nothing.'); }}><${Icon} n="copy" s=${14} />Copy to Outreach Desk</a></div></li>
+      <li>Open someone's LinkedIn profile and click the bookmark. It copies their details.</li>
+      <li>In the desk, click <strong>Paste from LinkedIn</strong> (Add prospect, a prospect's details, or Focus run) and paste.</li>
+    </ol>
+    <p class="note-box">It only reads the page you are already looking at, one profile per click, and sends nothing anywhere. If LinkedIn changes its page layout and a field comes out empty, select the top of the profile, copy it and paste that instead.</p>
+  <//>`;
+}
+
+/* Paste box: understands the bookmark copy or text copied from the top of a profile. */
+function ProfilePaste({ onApply, compact }) {
+  const [open, setOpen] = useState(!compact);
+  const [text, setText] = useState('');
+  const parsed = useMemo(() => parseProfileText(text), [text]);
+  const found = [['firstName', 'First name'], ['lastName', 'Last name'], ['position', 'Position'], ['company', 'Company'], ['title', 'Headline'], ['location', 'Location'], ['url', 'Profile URL']].filter(([k]) => parsed[k]);
+  const apply = () => { if (!found.length) return; onApply(parsed); setText(''); if (compact) setOpen(false); UI.toast('Filled in ' + found.map(f => f[1].toLowerCase()).join(', ') + '. Check before saving.'); };
+  if (!open) return html`<button type="button" class="btn sm" onClick=${() => setOpen(true)}><${Icon} n="copy" s=${14} />Paste from LinkedIn</button>`;
+  return html`<div class="paste-box">
+    <div class="paste-head"><strong><${Icon} n="copy" s=${14} />Paste from LinkedIn</strong>
+      <button type="button" class="btn sm ghost" onClick=${() => UI.open('bookmarklet', {})}>Get the one-click bookmark</button>
+      ${compact && html`<button type="button" class="btn sm ghost icon" aria-label="Close" onClick=${() => setOpen(false)}><${Icon} n="x" s=${14} /></button>`}</div>
+    <textarea id=${'pp-' + (compact ? 'c' : 'f')} class="textarea" style="min-height:70px;font-size:12.5px" placeholder="Click the bookmark on their profile, or select the top of their profile (name down to location), copy and paste it here."
+      value=${text} onInput=${e => setText(e.target.value)}></textarea>
+    ${text && html`<div class="btn-row">
+      ${found.length ? found.map(([k, l]) => html`<span class="pill tone-accent" key=${k}>${l}: ${String(parsed[k]).slice(0, 40)}</span>`) : html`<span class="pill tone-overdue">Couldn't read anything useful from that</span>`}
+      <span style="flex:1"></span>
+      <button type="button" class="btn sm primary" disabled=${!found.length} onClick=${apply}>Fill in</button>
+    </div>`}
+  </div>`;
+}
+
+/* ---------- human pacing between sends (per LinkedIn account) ---------- */
+const Cool = { until: {}, timer: null };
+function pacingSettings() {
+  const s = currentData().settings;
+  const min = Math.max(PACING_FLOOR, parseInt(s.pacingMin, 10) || PACING_FLOOR);
+  const max = Math.max(min, parseInt(s.pacingMax, 10) || 20);
+  return { on: s.pacingOn !== false, min, max };
+}
+function acctKeyOf(p) { return p.clientId + '|' + (p.senderId || 'none'); }
+function cooldownLeft(key) { const u = Cool.until[key]; if (!u) return 0; const ms = u - Date.now(); return ms > 0 ? Math.ceil(ms / 1000) : 0; }
+function cooldownTotal(key) { return Cool.until[key + ':len'] || 0; }
+function startCooldown(key) {
+  const ps = pacingSettings();
+  if (!ps.on) return 0;
+  const secs = ps.min + Math.floor(Math.random() * (ps.max - ps.min + 1));
+  Cool.until[key] = Date.now() + secs * 1000;
+  Cool.until[key + ':len'] = secs;
+  if (!Cool.timer) {
+    Cool.timer = setInterval(() => {
+      const live = Object.keys(Cool.until).some(k => k.indexOf(':len') === -1 && Cool.until[k] > Date.now());
+      bump();
+      if (!live) { clearInterval(Cool.timer); Cool.timer = null; Cool.until = {}; }
+    }, 1000);
+  }
+  bump();
+  return secs;
+}
+function Countdown({ secs, total, label }) {
+  const r = 9, c = 2 * Math.PI * r;
+  const frac = total > 0 ? Math.max(0, Math.min(1, secs / total)) : 0;
+  return html`<span class="countdown" title="A short random pause between sends keeps the account's activity human-paced">
+    <svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><circle cx="11" cy="11" r=${r} fill="none" stroke="var(--today-soft)" stroke-width="3" />
+      <circle cx="11" cy="11" r=${r} fill="none" stroke="var(--today)" stroke-width="3" stroke-dasharray=${c} stroke-dashoffset=${c * (1 - frac)} transform="rotate(-90 11 11)" stroke-linecap="round" /></svg>
+    <span>${label || 'Next send in'} <b class="num">${secs}s</b></span></span>`;
+}

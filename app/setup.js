@@ -627,6 +627,22 @@ function SettingsView() {
           </div>
         </section>
         <section class="panel">
+          <div class="panel-head"><h3>Pause between sends</h3><span class="muted" style="font-size:12.5px">Keeps each LinkedIn account human-paced</span></div>
+          <div class="panel-pad stack">
+            <label class="check"><input id="set-pace-on" type="checkbox" checked=${s.pacingOn !== false} onChange=${e => save({ pacingOn: e.target.checked })} />After each invite or message, wait a random number of seconds before the same account can send again</label>
+            <div class="when-row">
+              <span>Wait between</span>
+              <input id="set-pace-min" class="input sm num" type="number" min=${PACING_FLOOR} max="120" style="width:72px" value=${Math.max(PACING_FLOOR, s.pacingMin || PACING_FLOOR)} disabled=${s.pacingOn === false}
+                onChange=${e => { const mn = Math.max(PACING_FLOOR, Math.min(120, parseInt(e.target.value, 10) || PACING_FLOOR)); save({ pacingMin: mn, pacingMax: Math.max(mn, s.pacingMax || 20) }); }} />
+              <span>and</span>
+              <input id="set-pace-max" class="input sm num" type="number" min=${PACING_FLOOR} max="300" style="width:72px" value=${Math.max(s.pacingMin || PACING_FLOOR, s.pacingMax || 20)} disabled=${s.pacingOn === false}
+                onChange=${e => { const mx = Math.max(Math.max(PACING_FLOOR, s.pacingMin || PACING_FLOOR), Math.min(300, parseInt(e.target.value, 10) || 20)); save({ pacingMax: mx }); }} />
+              <span>seconds</span>
+            </div>
+            <span class="hint">A new random wait is picked after every send, never less than ${PACING_FLOOR} seconds. During the wait, that account's "Copy & open" and "Sent" buttons show a countdown. Other accounts are not affected.</span>
+          </div>
+        </section>
+        <section class="panel">
           <div class="panel-head"><h3>Schedule</h3></div>
           <div class="panel-pad stack">
             <div class="field"><span>Working days <span class="hint">due dates on other days move to the next working day</span></span>

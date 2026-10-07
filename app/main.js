@@ -22,6 +22,7 @@ const MODALS = {
   find: () => html`<${QuickFind} />`,
   people: () => html`<${PeopleModal} />`,
   help: p => html`<${HelpModal} view=${p.view} />`,
+  bookmarklet: () => html`<${BookmarkletModal} />`,
 };
 
 /* Ctrl/Cmd+K: jump to any prospect, client or screen. */

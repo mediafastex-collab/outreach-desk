@@ -186,6 +186,12 @@ No automation, scraping or LinkedIn login. No deal pipeline, invoicing or email 
 - **Journey strip.** Every task and prospect shows where they are: Invite ✓ → Accepted ✓ → Msg 1 (now / next date / overdue) → Msg 2 …
 - **Simpler sequence editor.** A vertical list of steps in plain words ("3 days after they accept, at 11:00 AM"), a visible "pause until they accept" point, click a step to edit it (big choices for the step type, a − / + day stepper, optional send time, message with one-click "Insert: First name / Company…"), "Add step here" between steps, and a summary (steps, messages, total length, people in progress).
 
+## Additions (round 5)
+
+- **Profile details without typing.** The desk never fetches LinkedIn itself (LinkedIn blocks it and forbids scraping). Instead, a "Copy to Outreach Desk" bookmark reads the profile the user is viewing (name, headline, position, company, location, URL) and copies it; "Paste from LinkedIn" boxes in Add prospect, Add in bulk, prospect details and Focus run fill the fields from that copy or from text selected and copied by hand off the top of a profile. New Position field and {{position}} template variable; lists show "Position at Company".
+- **Focus run profile strip.** Position, company, headline and location at the top of each card, editable in place, highlighted when missing.
+- **Human pacing between sends.** After an invite or message is marked sent, that LinkedIn account waits a random 5–20 seconds (new random value each time, never under 5) before its next "Copy & open" or "Sent", with a countdown. Configurable in Settings; other accounts are unaffected.
+
 ## Deliverables
 
 The working app, a short daily routine inside the app, and a list of assumptions made.

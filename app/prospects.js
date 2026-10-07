@@ -3,7 +3,7 @@
 'use strict';
 
 function haystack(p) {
-  return [p.firstName, p.lastName, p.company, p.title, p.location, p.email, p.url, (p.tags || []).join(' '), p.notes].join(' ').toLowerCase();
+  return [p.firstName, p.lastName, p.company, p.title, p.position, p.location, p.email, p.url, (p.tags || []).join(' '), p.notes].join(' ').toLowerCase();
 }
 function StepDots({ p, seq }) {
   if (!seq) return html`<span class="pill tone-overdue">No sequence</span>`;
@@ -16,14 +16,14 @@ function StepDots({ p, seq }) {
 }
 
 function prospectsCSV(rows, data) {
-  const head = ['Client', 'LinkedIn account', 'First name', 'Last name', 'Headline', 'Company', 'Location', 'Email', 'LinkedIn URL', 'Status', 'Sequence', 'Current step', 'Next due', 'Added', 'Invited', 'Accepted', 'Replied', 'Tags', 'Notes'];
+  const head = ['Client', 'LinkedIn account', 'First name', 'Last name', 'Position', 'Headline', 'Company', 'Location', 'Email', 'LinkedIn URL', 'Status', 'Sequence', 'Current step', 'Next due', 'Added', 'Invited', 'Accepted', 'Replied', 'Tags', 'Notes'];
   const out = [head];
   for (const { p, next } of rows) {
     const c = data.clients[p.clientId];
     const s = senderOf(c, p);
     const seq = data.seqs[p.sequenceId];
     const i = seq ? stepIndexOf(p, seq) : -1;
-    out.push([c ? c.name : '', s ? s.name : '', p.firstName, p.lastName, p.title, p.company, p.location, p.email, p.url,
+    out.push([c ? c.name : '', s ? s.name : '', p.firstName, p.lastName, p.position || positionFromHeadline(p.title), p.title, p.company, p.location, p.email, p.url,
       (STATUSES[p.status] || {}).label || p.status, seq ? seq.name : '', seq && i < seq.steps.length ? stepTitle(seq, i) : '',
       next && next.due ? next.due : '', p.addedOn || '', p.invitedOn || '', p.acceptedOn || '', p.repliedOn || '', (p.tags || []).join(', '), p.notes || '']);
   }
@@ -165,7 +165,7 @@ function ProspectsView() {
           return html`<div class=${'prow' + (isSel ? ' sel' : '')} key=${keyOf(p)} role="row">
             <input type="checkbox" aria-label=${'Select ' + fullName(p)} checked=${isSel} onChange=${() => toggle(p)} />
             <div class="who"><button type="button" onClick=${() => UI.openProspect(p)}>${fullName(p)}</button>
-              <div class="sub">${[p.title, p.company].filter(Boolean).join(' · ') || p.url}</div></div>
+              <div class="sub">${roleLine(p) || p.url}</div></div>
             <div class="cl"><${ClientChip} client=${c} /><span class="sub">${s ? s.name : 'No account'}${p.listId && listName(data, p.clientId, p.listId) ? ' · ' + listName(data, p.clientId, p.listId) : ''}</span></div>
             <div><${StatusPill} status=${p.status} /></div>
             <div><${StepDots} p=${p} seq=${data.seqs[p.sequenceId]} /></div>
@@ -317,7 +317,7 @@ function Timeline({ p, seq, data }) {
 }
 
 function DetailsForm({ p, data }) {
-  const init = () => ({ firstName: p.firstName || '', lastName: p.lastName || '', title: p.title || '', company: p.company || '', location: p.location || '', email: p.email || '', url: p.url || '', tags: (p.tags || []).join(', '), notes: p.notes || '', clientId: p.clientId, senderId: p.senderId || '' });
+  const init = () => ({ firstName: p.firstName || '', lastName: p.lastName || '', title: p.title || '', position: p.position || '', company: p.company || '', location: p.location || '', email: p.email || '', url: p.url || '', tags: (p.tags || []).join(', '), notes: p.notes || '', clientId: p.clientId, senderId: p.senderId || '' });
   const [v, setV] = useState(init);
   const [err, setErr] = useState('');
   useEffect(() => { setV(init()); setErr(''); }, [p.id, p.clientId]);
@@ -330,7 +330,7 @@ function DetailsForm({ p, data }) {
     const norm = normalizeLinkedIn(v.url);
     if (!norm) { setErr(checkLinkedIn(v.url).error); return; }
     if (!v.firstName.trim()) { setErr('First name is required.'); return; }
-    const patch = { firstName: v.firstName.trim(), lastName: v.lastName.trim(), title: v.title.trim(), company: v.company.trim(), location: v.location.trim(), email: v.email.trim(), tags: v.tags.split(',').map(t => t.trim()).filter(Boolean), notes: v.notes.trim() };
+    const patch = { firstName: v.firstName.trim(), lastName: v.lastName.trim(), title: v.title.trim(), position: v.position.trim(), company: v.company.trim(), location: v.location.trim(), email: v.email.trim(), tags: v.tags.split(',').map(t => t.trim()).filter(Boolean), notes: v.notes.trim() };
     if (norm.key !== p.urlKey) {
       const newId = prospectDocId(norm.key);
       if (findProspect(p.clientId, newId)) { setErr('Another prospect in this client already has that URL.'); return; }
@@ -342,11 +342,14 @@ function DetailsForm({ p, data }) {
     if (v.clientId !== p.clientId) { await Act.move(Object.assign(clone(fresh(p)), patch), v.clientId, v.senderId || null); return; }
     await Act.update(fresh(p), Object.assign(patch, { senderId: v.senderId || null }), 'Saved.');
   };
+  const applyPaste = d => setV(Object.assign({}, v, { firstName: v.firstName || d.firstName || '', lastName: v.lastName || d.lastName || '', title: d.title || v.title, position: d.position || v.position, company: d.company || v.company, location: d.location || v.location }));
   return html`<form class="stack" onSubmit=${save}>
+    <${ProfilePaste} compact=${true} onApply=${applyPaste} />
     <div class="fields">
       <label class="field"><span>First name</span><input id="d-first" class="input" value=${v.firstName} onInput=${set('firstName')} /></label>
       <label class="field"><span>Last name</span><input id="d-last" class="input" value=${v.lastName} onInput=${set('lastName')} /></label>
-      <label class="field full"><span>Headline / title</span><input id="d-title" class="input" value=${v.title} onInput=${set('title')} /></label>
+      <label class="field"><span>Position</span><input id="d-pos" class="input" placeholder="e.g. Head of Growth" value=${v.position} onInput=${set('position')} /></label>
+      <label class="field"><span>Headline</span><input id="d-title" class="input" value=${v.title} onInput=${set('title')} /></label>
       <label class="field"><span>Company</span><input id="d-company" class="input" value=${v.company} onInput=${set('company')} /></label>
       <label class="field"><span>Location</span><input id="d-location" class="input" value=${v.location} onInput=${set('location')} /></label>
       <label class="field full"><span>LinkedIn URL</span><input id="d-url" class="input" value=${v.url} onInput=${set('url')} /></label>
@@ -392,7 +395,8 @@ function ProspectDrawer({ cid, pid }) {
         <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">
           <div style="min-width:0">
             <h2>${fullName(p)}</h2>
-            <p class="soft">${[p.title, p.company, p.location].filter(Boolean).join(' · ') || 'No headline yet'}</p>
+            <p class="soft">${roleLine(p) || 'No position or company yet'}${p.location ? ' · ' + p.location : ''}</p>
+            ${p.title && p.title !== roleLine(p) && html`<p class="muted" style="font-size:12.5px;margin-top:2px">${p.title}</p>`}
           </div>
           <button type="button" class="btn ghost icon" aria-label="Close" onClick=${() => UI.closeDrawer()}><${Icon} n="x" /></button>
         </div>
@@ -447,7 +451,7 @@ function AddProspectModal({ clientId }) {
   const data = currentData();
   const blank = cid => {
     const c = data.clients[cid];
-    return { listId: '', newList: '', clientId: cid, senderId: c && c.senders && c.senders[0] ? c.senders[0].id : '', sequenceId: (c && c.defaultSequenceId && data.seqs[c.defaultSequenceId]) ? c.defaultSequenceId : (Object.values(data.seqs).find(s => !s.archived) || {}).id || '', url: '', firstName: '', lastName: '', title: '', company: '', location: '', email: '', tags: '', notes: '', startOn: TODAY, alreadyConnected: false };
+    return { position: '', listId: '', newList: '', clientId: cid, senderId: c && c.senders && c.senders[0] ? c.senders[0].id : '', sequenceId: (c && c.defaultSequenceId && data.seqs[c.defaultSequenceId]) ? c.defaultSequenceId : (Object.values(data.seqs).find(s => !s.archived) || {}).id || '', url: '', firstName: '', lastName: '', title: '', company: '', location: '', email: '', tags: '', notes: '', startOn: TODAY, alreadyConnected: false };
   };
   const [v, setV] = useState(() => blank(defaultClientId(data, clientId)));
   const [err, setErr] = useState('');
@@ -484,7 +488,7 @@ function AddProspectModal({ clientId }) {
     setBusy(false);
     if (!ok) return;
     UI.toast(fullName(p) + ' added. ' + (v.alreadyConnected ? 'First message is on the list.' : 'Connection request is on the list.'), { undo: () => W.deleteProspect(p) });
-    if (again) setV(Object.assign(blank(v.clientId), { senderId: v.senderId, sequenceId: v.sequenceId, tags: v.tags, startOn: v.startOn, listId }));
+    if (again) setV(Object.assign(blank(v.clientId), { position: '', senderId: v.senderId, sequenceId: v.sequenceId, tags: v.tags, startOn: v.startOn, listId }));
     else UI.close();
   };
   if (!Object.keys(data.clients).length) {
@@ -496,6 +500,7 @@ function AddProspectModal({ clientId }) {
       <button type="button" class="btn" disabled=${busy} onClick=${() => submit(null, true)}>Add and add another</button>
       <button type="submit" form="add-form" class="btn primary" disabled=${busy}>Add prospect</button>`}>
     <form id="add-form" class="stack" onSubmit=${e => submit(e, false)}>
+      <${ProfilePaste} onApply=${d => setV(Object.assign({}, v, { url: d.url || v.url, firstName: d.firstName || v.firstName, lastName: d.lastName || v.lastName, title: d.title || v.title, position: d.position || v.position, company: d.company || v.company, location: d.location || v.location }))} />
       <label class="field"><span>LinkedIn URL</span>
         <input id="a-url" class="input" data-autofocus placeholder="https://www.linkedin.com/in/jane-doe" value=${v.url} onInput=${set('url')} onBlur=${onUrlBlur} />
         ${v.url && !norm && html`<span class="err">${checkLinkedIn(v.url).error}</span>`}
@@ -506,7 +511,8 @@ function AddProspectModal({ clientId }) {
       <div class="fields">
         <label class="field"><span>First name</span><input id="a-first" class="input" value=${v.firstName} onInput=${set('firstName')} /></label>
         <label class="field"><span>Last name</span><input id="a-last" class="input" value=${v.lastName} onInput=${set('lastName')} /></label>
-        <label class="field full"><span>Headline / title</span><input id="a-title" class="input" value=${v.title} onInput=${set('title')} /></label>
+        <label class="field"><span>Position</span><input id="a-pos" class="input" placeholder="e.g. Head of Growth" value=${v.position} onInput=${set('position')} /></label>
+        <label class="field"><span>Headline</span><input id="a-title" class="input" placeholder="Their LinkedIn headline" value=${v.title} onInput=${set('title')} /></label>
         <label class="field"><span>Company</span><input id="a-company" class="input" value=${v.company} onInput=${set('company')} /></label>
         <label class="field"><span>Location</span><input id="a-location" class="input" value=${v.location} onInput=${set('location')} /></label>
         <label class="field"><span>Client</span><${ClientSelect} id="a-client" data=${data} value=${v.clientId} onChange=${x => setV(Object.assign(blank(x), { url: v.url, firstName: v.firstName, lastName: v.lastName, title: v.title, company: v.company, location: v.location, email: v.email, tags: v.tags, notes: v.notes }))} /></label>
@@ -534,6 +540,12 @@ function parsePastedLines(text) {
   String(text || '').split(/\r?\n/).forEach((line, i) => {
     const raw = line.trim();
     if (!raw) return;
+    if (raw.indexOf('FOD1:') !== -1) {
+      const d = parseProfileText(raw);
+      if (d.url) out.push({ line: i + 1, raw, row: { url: d.url, firstName: d.firstName, lastName: d.lastName, title: d.title, position: d.position, company: d.company, location: d.location } });
+      else out.push({ line: i + 1, raw: raw.slice(0, 60), error: 'That copied profile has no LinkedIn URL in it.' });
+      return;
+    }
     const cells = (raw.indexOf('\t') !== -1 ? raw.split('\t') : raw.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/)).map(c => c.trim().replace(/^"|"$/g, ''));
     const ui = cells.findIndex(c => normalizeLinkedIn(c));
     if (ui === -1) {
@@ -570,7 +582,7 @@ function buildImportRows(items, opts, data) {
     const elsewhere = data.prospects.some(x => x.urlKey === norm.key && x.clientId !== opts.clientId);
     results.push({
       status: first ? 'new' : 'noname', line: it.line, elsewhere,
-      fields: { norm, firstName: first, lastName: last, title: r.title || '', company: opts.cleanCompany ? cleanCompany(r.company) : (r.company || ''), location: r.location || '', email: r.email || '', notes: r.notes || '', tags: Array.from(new Set(tags)) },
+      fields: { norm, firstName: first, lastName: last, title: r.title || '', position: r.position || positionFromHeadline(r.title), company: opts.cleanCompany ? cleanCompany(r.company || companyFromHeadline(r.title)) : (r.company || companyFromHeadline(r.title) || ''), location: r.location || '', email: r.email || '', notes: r.notes || '', tags: Array.from(new Set(tags)) },
     });
   }
   return results;
@@ -691,8 +703,8 @@ function BulkAddModal({ clientId }) {
         ${tally.invalid > 8 && html`<span class="muted">…and ${tally.invalid - 8} more.</span>`}</div>`}
       ${daysNeeded > 1 && html`<p class="soft" style="font-size:13px">At ${perDay.dailyInvites} invites a day for ${perDay.name}, these invites spread over about ${daysNeeded} working days. The Today list paces them for you.</p>`}
       <div class="preview-table"><table>
-        <thead><tr><th>Name</th><th>Company</th><th>Headline</th><th>LinkedIn</th></tr></thead>
-        <tbody>${results.filter(r => r.status === 'new').slice(0, 6).map((r, i) => html`<tr key=${i}><td>${r.fields.firstName} ${r.fields.lastName}</td><td>${r.fields.company}</td><td>${r.fields.title}</td><td class="mono">${r.fields.norm.slug || r.fields.norm.key}</td></tr>`)}</tbody>
+        <thead><tr><th>Name</th><th>Position</th><th>Company</th><th>LinkedIn</th></tr></thead>
+        <tbody>${results.filter(r => r.status === 'new').slice(0, 6).map((r, i) => html`<tr key=${i}><td>${r.fields.firstName} ${r.fields.lastName}</td><td>${r.fields.position}</td><td>${r.fields.company}</td><td class="mono">${r.fields.norm.slug || r.fields.norm.key}</td></tr>`)}</tbody>
       </table></div>
     </div>`}
   <//>`;

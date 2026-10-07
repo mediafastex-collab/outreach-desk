@@ -22,7 +22,14 @@ const Act = {
     const verb = step && step.type === 'connect' ? 'Invite sent to ' : step && groupOf(step.type) === 'message' ? stepShort(seq, i) + ' sent to ' : stepShort(seq, i) + ' done for ';
     const d = on || TODAY;
     const next = retime(actCompleteStep(p, seq, d, me()), (p.log || []).length, d, time);
-    return Act.commit(p, next, verb + fullName(p) + (on && on !== TODAY ? ' (logged for ' + fmtDay(on) + (time ? ' ' + fmtClock(time) : '') + ')' : '') + '.');
+    const live = (!on || on === TODAY) && !time;
+    return Act.commit(p, next, verb + fullName(p) + (on && on !== TODAY ? ' (logged for ' + fmtDay(on) + (time ? ' ' + fmtClock(time) : '') + ')' : '') + '.').then(ok => {
+      if (ok && live && step) {
+        const secs = startCooldown(acctKeyOf(p));
+        if (secs) UI.toasts[UI.toasts.length - 1].text += ' Next send on this account in ' + secs + 's.';
+      }
+      return ok;
+    });
   },
   skip(p) {
     const seq = seqFor(p);

@@ -47,7 +47,9 @@ function TaskRow({ task, showClient }) {
   const [busy, setBusy] = useState(false);
   const g = task.group;
   const icon = task.kind === 'step' ? (STEP_TYPES[task.step.type] || STEP_TYPES.task).icon : GROUP_ICON[g];
-  const sub = [p.title, p.company].filter(Boolean).join(' · ');
+  const sub = roleLine(p);
+  const key = acctKeyOf(p);
+  const wait = task.kind === 'step' ? cooldownLeft(key) : 0;
   const run = fn => async () => { if (busy) return; setBusy(true); try { await fn(); } finally { setBusy(false); } };
   const isConnect = task.kind === 'step' && task.step.type === 'connect';
   const text = task.kind === 'step' ? String(task.text || '').trim() : '';
@@ -57,7 +59,7 @@ function TaskRow({ task, showClient }) {
   if (task.kind === 'step') label = task.title;
   else if (task.kind === 'reply') label = 'Replied ' + relDay(task.due, TODAY) + (p.replyAfter ? ' after ' + p.replyAfter.toLowerCase() : '');
   else if (task.kind === 'reminder') label = 'Reminder';
-  const openLink = html`<a class="btn sm" href=${p.url} target="_blank" rel="noopener noreferrer"
+  const openLink = wait > 0 ? html`<button type="button" class="btn sm" disabled title="Short pause between sends on this account"><${Icon} n="clock" s=${14} />Wait ${wait}s</button>` : html`<a class="btn sm" href=${p.url} target="_blank" rel="noopener noreferrer"
       onClick=${text ? () => copyText(text, 'Message copied') : undefined}
       title=${text ? 'Copies the message, then opens their profile' : 'Open their LinkedIn profile'}>
       <${Icon} n=${text ? 'copy' : 'external'} s=${14} />${text ? 'Copy & open' : 'Open profile'}</a>`;
@@ -70,7 +72,7 @@ function TaskRow({ task, showClient }) {
       <button type="button" class="btn sm primary" disabled=${busy} onClick=${run(() => Act.reminderDone(fresh(p)))}><${Icon} n="check" s=${14} />Done</button>`;
   } else {
     actions = html`${openLink}
-      <button type="button" class="btn sm primary" disabled=${busy} onClick=${run(() => Act.done(fresh(p)))}><${Icon} n="check" s=${14} />${doneLabel(task)}</button>`;
+      <button type="button" class="btn sm primary" disabled=${busy || wait > 0} onClick=${run(() => Act.done(fresh(p)))}><${Icon} n="check" s=${14} />${doneLabel(task)}</button>`;
   }
   return html`<article class=${'task' + (UI.flash === p.clientId + '/' + p.id ? ' flash' : '')} data-pkey=${p.clientId + '/' + p.id}>
     <div class=${'task-icon ' + GROUP_TONE[g]}><${Icon} n=${icon} /></div>
@@ -120,6 +122,7 @@ function AccountGroup({ a, tasks }) {
         ${wLim > 0 && html`<${Meter} label="7 days" v=${u.invitesWeek} max=${wLim} />`}
         <span class="num">${plural(u.messagesToday, 'message')} today</span>
       </div>
+      ${cooldownLeft(a.key) > 0 && html`<${Countdown} secs=${cooldownLeft(a.key)} total=${cooldownTotal(a.key)} />`}
       <button type="button" class="btn sm" onClick=${() => UI.open('run', { key: a.key })}><${Icon} n="zap" s=${14} />Focus run</button>
     </header>
     ${tasks.map(x => html`<${TaskRow} key=${x.key} task=${x} />`)}
@@ -218,7 +221,7 @@ function WaitingRow({ task }) {
     <div class="task-body">
       <div class="task-top">
         <button type="button" class="task-name" onClick=${() => UI.openProspect(p)}>${fullName(p)}</button>
-        <span class="task-sub">${[p.title, p.company].filter(Boolean).join(' · ')}</span>
+        <span class="task-sub">${roleLine(p)}</span>
       </div>
       <div class="task-meta">
         <span class="task-step">Invite sent ${relDay(p.invitedOn || task.due, TODAY)}${p.invitedOn ? ' (' + fmtDay(p.invitedOn) + ')' : ''}</span>
@@ -268,7 +271,7 @@ function UpcomingTab({ board }) {
     ${day.tasks.slice().sort(taskOrder).map(x => html`<article class="task" key=${x.key}>
       <div class=${'task-icon ' + GROUP_TONE[x.group]}><${Icon} n=${x.kind === 'step' ? (STEP_TYPES[x.step.type] || STEP_TYPES.task).icon : GROUP_ICON[x.group]} /></div>
       <div class="task-body">
-        <div class="task-top"><button type="button" class="task-name" onClick=${() => UI.openProspect(x.p)}>${fullName(x.p)}</button><span class="task-sub">${[x.p.title, x.p.company].filter(Boolean).join(' · ')}</span></div>
+        <div class="task-top"><button type="button" class="task-name" onClick=${() => UI.openProspect(x.p)}>${fullName(x.p)}</button><span class="task-sub">${roleLine(x.p)}</span></div>
         <div class="task-meta">
           <${ClientChip} client=${x.client} /><span class="task-step">${x.kind === 'reminder' ? 'Reminder' + (x.note ? ': ' + x.note : '') : x.title}</span>
           ${x.time && html`<span class="pill tone-neutral"><${Icon} n="clock" s=${11} />${fmtClock(x.time)}</span>`}
@@ -460,7 +463,7 @@ function AcceptanceModal({ accountKey }) {
       <div class="checklist">
         ${list.map(x => html`<label key=${x.key}>
           <input type="checkbox" checked=${sel.has(x.key)} onChange=${() => toggle(x.key)} />
-          <span style="min-width:0"><strong>${fullName(x.p)}</strong> <span class="muted">${[x.p.title, x.p.company].filter(Boolean).join(' · ')}</span></span>
+          <span style="min-width:0"><strong>${fullName(x.p)}</strong> <span class="muted">${roleLine(x.p)}</span></span>
           <span class="btn-row" style="gap:6px;flex-wrap:nowrap">
             ${x.stale && html`<span class="pill tone-overdue">stale</span>`}
             <span class="mono muted">${x.pendingDays}d</span>
@@ -472,6 +475,41 @@ function AcceptanceModal({ accountKey }) {
 }
 
 /* ---------- focus run: one task at a time ---------- */
+/* Profile details shown in Focus run, editable on the spot. */
+function ProfileStrip({ p, missing }) {
+  const [edit, setEdit] = useState(false);
+  const init = () => ({ position: p.position || '', company: p.company || '', title: p.title || '', location: p.location || '' });
+  const [v, setV] = useState(init);
+  useEffect(() => { setV(init()); setEdit(false); }, [p.id]);
+  const needs = (missing || []).length > 0 || (!p.company && !p.position);
+  const save = async () => {
+    const patch = { position: v.position.trim(), company: v.company.trim(), title: v.title.trim(), location: v.location.trim() };
+    if (await Act.update(fresh(p), patch, 'Details saved for ' + fullName(p) + '.')) setEdit(false);
+  };
+  const applyPaste = d => setV(Object.assign({}, v, { position: d.position || v.position, company: d.company || v.company, title: d.title || v.title, location: d.location || v.location }));
+  if (!edit) {
+    return html`<div class=${'profile-strip' + (needs ? ' needs' : '')}>
+      <dl>
+        <div><dt>Position</dt><dd>${p.position || positionFromHeadline(p.title) || html`<span class="muted">not set</span>`}</dd></div>
+        <div><dt>Company</dt><dd>${p.company || html`<span class="muted">not set</span>`}</dd></div>
+        <div><dt>Headline</dt><dd>${p.title || html`<span class="muted">not set</span>`}</dd></div>
+        <div><dt>Location</dt><dd>${p.location || html`<span class="muted">not set</span>`}</dd></div>
+      </dl>
+      <button type="button" class=${'btn sm' + (needs ? ' primary' : '')} onClick=${() => setEdit(true)}><${Icon} n="edit" s=${14} />${needs ? 'Add details' : 'Edit'}</button>
+    </div>`;
+  }
+  return html`<div class="profile-strip editing">
+    <${ProfilePaste} onApply=${applyPaste} />
+    <div class="fields">
+      <label class="field"><span>Position</span><input id="ps-pos" class="input sm" value=${v.position} onInput=${e => setV(Object.assign({}, v, { position: e.target.value }))} /></label>
+      <label class="field"><span>Company</span><input id="ps-co" class="input sm" value=${v.company} onInput=${e => setV(Object.assign({}, v, { company: e.target.value }))} /></label>
+      <label class="field full"><span>Headline</span><input id="ps-hl" class="input sm" value=${v.title} onInput=${e => setV(Object.assign({}, v, { title: e.target.value }))} /></label>
+      <label class="field full"><span>Location</span><input id="ps-loc" class="input sm" value=${v.location} onInput=${e => setV(Object.assign({}, v, { location: e.target.value }))} /></label>
+    </div>
+    <div class="btn-row"><button type="button" class="btn sm primary" onClick=${save}>Save details</button><button type="button" class="btn sm ghost" onClick=${() => { setV(init()); setEdit(false); }}>Cancel</button></div>
+  </div>`;
+}
+
 function RunModal({ accountKey }) {
   const data = currentData();
   const board = useMemo(() => buildBoard(data, { today: TODAY, clientId: accountKey ? '' : UI.todayFilter.clientId, operatorId: accountKey ? '' : UI.todayFilter.operatorId }), [data, TODAY]);
@@ -501,18 +539,21 @@ function RunModal({ accountKey }) {
   }
   const p = task.p;
   const isStep = task.kind === 'step';
+  const wait = isStep ? cooldownLeft(acctKeyOf(p)) : 0;
   return html`<${Modal} title=${title} size="wide" foot=${html`
       <span class="left run-progress">${count} done · ${queue.length} to go</span>
       <button type="button" class="btn" disabled=${busy} onClick=${() => UI.open('reply', { p: fresh(p), back: { type: 'run', props: { key: accountKey } } })}><${Icon} n="reply" s=${14} />They replied</button>
       ${isStep && html`<button type="button" class="btn" disabled=${busy} onClick=${act(() => Act.snooze(fresh(p), addDays(TODAY, 1)))}><${Icon} n="clock" s=${14} />Tomorrow</button>`}
       <button type="button" class="btn" disabled=${busy} onClick=${skip}><${Icon} n="skip" s=${14} />Later</button>
-      <button type="button" class="btn primary" disabled=${busy} onClick=${act(() => task.kind === 'reminder' ? Act.reminderDone(fresh(p)) : Act.done(fresh(p)))}><${Icon} n="check" s=${14} />${doneLabel(task)} · next</button>`}>
+      <button type="button" class="btn primary" disabled=${busy || wait > 0} onClick=${act(() => task.kind === 'reminder' ? Act.reminderDone(fresh(p)) : Act.done(fresh(p)))}><${Icon} n="check" s=${14} />${wait > 0 ? 'Wait ' + wait + 's' : doneLabel(task) + ' · next'}</button>`}>
     <div class="run-card">
       <div>
         <div class="task-meta" style="margin-bottom:8px"><${ClientChip} client=${task.client} /><span class="task-step">${task.sender ? task.sender.name : ''}</span></div>
         <div class="run-name">${fullName(p)}</div>
-        <div class="muted">${[p.title, p.company, p.location].filter(Boolean).join(' · ')}</div>
+        <div class="muted">${roleLine(p) || 'No position or company yet'}</div>
       </div>
+      <${ProfileStrip} p=${fresh(p)} missing=${task.missing} />
+      ${wait > 0 && html`<div class="pace-banner"><${Countdown} secs=${wait} total=${cooldownTotal(acctKeyOf(p))} label="Short pause before the next send:" /><span class="muted">A random ${pacingSettings().min}–${pacingSettings().max} second gap between sends keeps this account's activity looking human. Read the profile meanwhile.</span></div>`}
       <div class="task-meta">
         <span class=${'pill ' + GROUP_TONE[task.group]}><${Icon} n=${isStep ? (STEP_TYPES[task.step.type] || STEP_TYPES.task).icon : GROUP_ICON[task.group]} s=${12} />${isStep ? task.title : 'Reminder'}</span>
         <${Due} due=${task.due} time=${task.time} />
@@ -524,7 +565,8 @@ function RunModal({ accountKey }) {
           <textarea id="run-draft" class="textarea run-msg" value=${draft} onInput=${e => setDraft(e.target.value)}></textarea></label>
         ${placeholders(draft) > 0 && html`<div class="note-box warn">Replace the [bracketed] placeholders before sending.</div>`}
         <div class="btn-row">
-          <a class="btn primary" href=${p.url} target="_blank" rel="noopener noreferrer" onClick=${() => copyText(draft, 'Message copied')}><${Icon} n="copy" s=${14} />Copy & open profile</a>
+          ${wait > 0 ? html`<button type="button" class="btn primary" disabled><${Icon} n="clock" s=${14} />Copy & open in ${wait}s</button>`
+            : html`<a class="btn primary" href=${p.url} target="_blank" rel="noopener noreferrer" onClick=${() => copyText(draft, 'Message copied')}><${Icon} n="copy" s=${14} />Copy & open profile</a>`}
           <button type="button" class="btn" onClick=${() => copyText(draft, 'Message copied')}><${Icon} n="copy" s=${14} />Copy only</button>
         </div>`
       : html`
