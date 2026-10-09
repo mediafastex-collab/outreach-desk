@@ -263,7 +263,8 @@ function validateSequence(seq) {
 /* ---------- LinkedIn URLs & names ---------- */
 /* Strict check: only real LinkedIn person links pass (profile /in/…, legacy /pub/…, Sales Navigator lead).
    Returns { ok: true, url, key, slug, kind } or { ok: false, error }. */
-const LI_SLUG = /^[\p{L}\p{N}][^\s\/?#,]{2,99}$/u;
+/* Profile part of /in/…: 3–100 characters, no spaces or separators, at least one letter or digit (some real ones start with "-" or a symbol). */
+const LI_SLUG = /^(?=[^\s\/?#,]*[\p{L}\p{N}])[^\s\/?#,]{3,100}$/u;
 function checkLinkedIn(raw) {
   let s = String(raw || '').trim().replace(/^<|>$/g, '').replace(/^["']|["']$/g, '');
   if (!s) return { ok: false, error: 'Paste the LinkedIn profile URL.' };

@@ -104,8 +104,15 @@ function TaskRow({ task, showClient }) {
   </article>`;
 }
 
+/* Long lists render in pages so big imports stay fast. */
+function ShowMore({ shown, total, step, onMore }) {
+  if (total <= shown) return null;
+  return html`<div class="panel-pad"><button type="button" class="btn sm" onClick=${onMore}>Show ${Math.min(step, total - shown)} more of ${fmtNum(total - shown)}</button></div>`;
+}
+
 function AccountGroup({ a, tasks }) {
   const data = currentData();
+  const [limit, setLimit] = useState(30);
   const op = memberName(data.settings, a.operatorId);
   const s = a.sender;
   const u = a.usage;
@@ -126,7 +133,8 @@ function AccountGroup({ a, tasks }) {
       ${cooldownLeft(a.key) > 0 && html`<${Countdown} secs=${cooldownLeft(a.key)} total=${cooldownTotal(a.key)} />`}
       <button type="button" class="btn sm" onClick=${() => UI.open('run', { key: a.key })}><${Icon} n="zap" s=${14} />Focus run</button>
     </header>
-    ${tasks.map(x => html`<${TaskRow} key=${x.key} task=${x} />`)}
+    ${tasks.slice(0, limit).map(x => html`<${TaskRow} key=${x.key} task=${x} />`)}
+    <${ShowMore} shown=${limit} total=${tasks.length} step=${50} onMore=${() => setLimit(limit + 50)} />
     ${a.overLimit.length > 0 && html`<div class="overflow-note"><${Icon} n="info" s=${14} />
       ${plural(a.overLimit.length, 'more invite')} queued. ${s ? s.name : 'This account'} has used today's invite allowance, so they move to the next working day.</div>`}
   </section>`;
@@ -254,22 +262,32 @@ function WaitingTab({ board, settings }) {
       <div><span class="n">2</span>Anyone here who now shows as a connection: click <strong>Accepted</strong>.</div>
       <div><span class="n">3</span>Their <strong>Message 1</strong> moves to <strong>To do</strong> right away, ready to send.</div>
     </div>
-    ${accts.map(a => html`<section class="panel acct" key=${a.key}>
-      <header class="acct-head">
-        <div class="acct-title"><${ClientChip} client=${a.client} /><strong>${a.sender ? a.sender.name : 'No LinkedIn account set'}</strong>
-          <span class="muted">${plural(a.pending.length, 'person', 'people')} waiting${a.stale.length ? ' · ' + a.stale.length + ' over ' + settings.staleDays + ' days' : ''}</span></div>
-        <button type="button" class="btn sm" onClick=${() => UI.open('accept', { key: a.key })}><${Icon} n="checkSquare" s=${14} />Tick several at once</button>
-      </header>
-      ${a.pending.map(x => html`<${WaitingRow} key=${x.key} task=${x} />`)}
-    </section>`)}
+    ${accts.map(a => html`<${WaitingGroup} key=${a.key} a=${a} settings=${settings} />`)}
   </div>`;
+}
+function WaitingGroup({ a, settings }) {
+  const [limit, setLimit] = useState(40);
+  return html`<section class="panel acct">
+    <header class="acct-head">
+      <div class="acct-title"><${ClientChip} client=${a.client} /><strong>${a.sender ? a.sender.name : 'No LinkedIn account set'}</strong>
+        <span class="muted">${plural(a.pending.length, 'person', 'people')} waiting${a.stale.length ? ' · ' + a.stale.length + ' over ' + settings.staleDays + ' days' : ''}</span></div>
+      <button type="button" class="btn sm" onClick=${() => UI.open('accept', { key: a.key })}><${Icon} n="checkSquare" s=${14} />Tick several at once</button>
+    </header>
+    ${a.pending.slice(0, limit).map(x => html`<${WaitingRow} key=${x.key} task=${x} />`)}
+    <${ShowMore} shown=${limit} total=${a.pending.length} step=${100} onMore=${() => setLimit(limit + 100)} />
+  </section>`;
 }
 
 function UpcomingTab({ board }) {
   if (!board.upcoming.length) return html`<div class="panel"><${Empty} icon="calendar" title="Nothing scheduled in the next 14 days">New steps appear here as invites get accepted and messages go out.</${Empty}></div>`;
-  return html`<div class="stack-lg">${board.upcoming.map(day => html`<section class="panel acct" key=${day.date}>
+  return html`<div class="stack-lg">${board.upcoming.map(day => html`<${UpcomingDay} key=${day.date} day=${day} />`)}</div>`;
+}
+function UpcomingDay({ day }) {
+  const [limit, setLimit] = useState(30);
+  const tasks = useMemo(() => day.tasks.slice().sort(taskOrder), [day]);
+  return html`<section class="panel acct">
     <header class="acct-head"><div class="acct-title"><strong>${fmtLong(day.date)}</strong><span class="muted">${relDay(day.date, TODAY)} · ${plural(day.tasks.length, 'task')}</span></div></header>
-    ${day.tasks.slice().sort(taskOrder).map(x => html`<article class="task" key=${x.key}>
+    ${tasks.slice(0, limit).map(x => html`<article class="task" key=${x.key}>
       <div class=${'task-icon ' + GROUP_TONE[x.group]}><${Icon} n=${x.kind === 'step' ? (STEP_TYPES[x.step.type] || STEP_TYPES.task).icon : GROUP_ICON[x.group]} /></div>
       <div class="task-body">
         <div class="task-top"><button type="button" class="task-name" onClick=${() => UI.openProspect(x.p)}>${fullName(x.p)}</button><span class="task-sub">${roleLine(x.p)}</span></div>
@@ -285,7 +303,8 @@ function UpcomingTab({ board }) {
         <${Menu} icon="more" items=${taskMenuItems(Object.assign({}, x, { p: fresh(x.p) }))} />
       </div>
     </article>`)}
-  </section>`)}</div>`;
+    <${ShowMore} shown=${limit} total=${tasks.length} step=${50} onMore=${() => setLimit(limit + 50)} />
+  </section>`;
 }
 
 function DoneTab({ data, f }) {
@@ -323,6 +342,7 @@ function DoneTab({ data, f }) {
 
 function TodayView() {
   const data = currentData();
+  const [replyLimit, setReplyLimit] = useState(30);
   const f = UI.todayFilter;
   const tab = f.tab || 'todo';
   const board = useMemo(() => buildBoard(data, { today: TODAY, clientId: f.clientId, operatorId: f.operatorId, listId: f.clientId ? f.listId : '' }), [data, TODAY, f.clientId, f.operatorId, f.listId]);
@@ -395,7 +415,8 @@ function TodayView() {
       <div class="stack-lg">
         ${showReplies && html`<section class="panel acct">
           <header class="acct-head"><div class="acct-title"><span class="pill tone-reply"><${Icon} n="reply" s=${12} />Replies waiting</span><span class="muted">Answer these first. The sequence has stopped for each of them.</span></div></header>
-          ${board.replies.map(x => html`<${TaskRow} key=${x.key} task=${x} showClient=${true} />`)}
+          ${board.replies.slice(0, replyLimit).map(x => html`<${TaskRow} key=${x.key} task=${x} showClient=${true} />`)}
+          <${ShowMore} shown=${replyLimit} total=${board.replies.length} step=${50} onMore=${() => setReplyLimit(replyLimit + 50)} />
         </section>`}
         ${accounts.map(x => html`<${AccountGroup} key=${x.a.key} a=${x.a} tasks=${x.tasks} />`)}
         ${!showReplies && accounts.length === 0 && html`<div class="panel"><${Empty} icon="check" title=${g === 'all' ? 'All done for now' : 'Nothing of this type is due'}
@@ -425,7 +446,11 @@ function AcceptanceModal({ accountKey }) {
   const [when, setWhen] = useState(TODAY);
   const [remind, setRemind] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [q, setQ] = useState('');
+  const [limit, setLimit] = useState(150);
   const list = a ? a.pending : [];
+  const needle = q.trim().toLowerCase();
+  const shown = needle ? list.filter(x => (fullName(x.p) + ' ' + roleLine(x.p) + ' ' + (x.p.url || '')).toLowerCase().indexOf(needle) !== -1) : list;
   const toggle = k => { const n = new Set(sel); if (n.has(k)) n.delete(k); else n.add(k); setSel(n); };
   const chosen = list.filter(x => sel.has(x.key));
   const accept = async () => {
@@ -456,13 +481,14 @@ function AcceptanceModal({ accountKey }) {
           ${presets.map(x => html`<button type="button" key=${x.label} aria-pressed=${when === x.value ? 'true' : 'false'} onClick=${() => setWhen(x.value)}>${x.label}</button>`)}
         </div>
         <input id="acc-date" type="date" class="input sm" style="width:auto" value=${when} onInput=${e => setWhen(e.target.value)} />
+        ${list.length > 20 && html`<input id="acc-search" type="search" class="input sm" style="width:200px" placeholder="Find a name…" value=${q} onInput=${e => { setQ(e.target.value); setLimit(150); }} />`}
         <span style="flex:1"></span>
-        <button type="button" class="btn sm ghost" onClick=${() => setSel(new Set(list.map(x => x.key)))}>Select all</button>
+        <button type="button" class="btn sm ghost" onClick=${() => setSel(new Set(shown.map(x => x.key)))}>${needle ? 'Select ' + shown.length + ' shown' : 'Select all'}</button>
         ${a.stale.length > 0 && html`<button type="button" class="btn sm ghost" onClick=${() => setSel(new Set(a.stale.map(x => x.key)))}>Select ${a.stale.length} stale</button>`}
         ${sel.size > 0 && html`<button type="button" class="btn sm ghost" onClick=${() => setSel(new Set())}>Clear</button>`}
       </div>
       <div class="checklist">
-        ${list.map(x => html`<label key=${x.key}>
+        ${shown.slice(0, limit).map(x => html`<label key=${x.key}>
           <input type="checkbox" checked=${sel.has(x.key)} onChange=${() => toggle(x.key)} />
           <span style="min-width:0"><strong>${fullName(x.p)}</strong> <span class="muted">${roleLine(x.p)}</span></span>
           <span class="btn-row" style="gap:6px;flex-wrap:nowrap">
@@ -471,7 +497,9 @@ function AcceptanceModal({ accountKey }) {
             <a class="btn sm ghost icon" href=${x.p.url} target="_blank" rel="noopener noreferrer" aria-label=${'Open ' + fullName(x.p) + ' on LinkedIn'}><${Icon} n="external" s=${14} /></a>
           </span>
         </label>`)}
-      </div>`}
+        ${!shown.length && html`<p class="muted" style="padding:10px 4px">Nobody waiting matches “${q.trim()}”.</p>`}
+      </div>
+      ${shown.length > limit && html`<button type="button" class="btn sm" style="align-self:flex-start" onClick=${() => setLimit(limit + 300)}>Show ${Math.min(300, shown.length - limit)} more of ${fmtNum(shown.length - limit)}</button>`}`}
   <//>`;
 }
 
