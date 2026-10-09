@@ -74,6 +74,11 @@ const Act = {
   reminderDone(p) {
     return Act.commit(p, actReminderDone(p, TODAY, me()), 'Reminder cleared for ' + fullName(p) + '.');
   },
+  engage(p, channel, note, on, time) {
+    const d = on || TODAY;
+    const next = retime(actEngage(p, channel, note, d, me()), (p.log || []).length, d, time);
+    return Act.commit(p, next, 'Logged for ' + fullName(p) + ': ' + (ENGAGE_TYPES[channel] || ENGAGE_TYPES.other).label.toLowerCase() + '.');
+  },
   setList(p, listId, listName) {
     return Act.commit(p, actSetList(p, listId, listName, TODAY, me()), fullName(p) + (listId ? ' added to ' + listName + '.' : ' removed from the list.'));
   },
@@ -200,6 +205,7 @@ function taskMenuItems(task) {
     items.push({ label: 'Withdraw invite…', icon: 'logout', onSelect: () => openWithdraw(p) });
   }
   items.push({ divider: true });
+  items.push({ label: 'Log engagement…', icon: 'thumbsUp', onSelect: () => UI.open('engage', { p }) });
   items.push({ label: 'Add to a list…', icon: 'list', onSelect: () => UI.open('setList', { ps: [p] }) });
   items.push({ label: 'Open details', icon: 'user', onSelect: () => UI.openProspect(p) });
   return items;

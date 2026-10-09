@@ -137,7 +137,7 @@ const CLIENT_COLORS = 8;
 
 const TEMPLATE_VARS = [
   ['firstName', 'First name'], ['lastName', 'Last name'], ['fullName', 'Full name'], ['company', 'Company'],
-  ['position', 'Position'], ['title', 'Headline'], ['location', 'Location'], ['senderFirstName', 'Sender first name'],
+  ['position', 'Position'], ['title', 'Headline'], ['painPoint', 'Pain point'], ['country', 'Country'], ['location', 'Location'], ['senderFirstName', 'Sender first name'],
   ['senderName', 'Sender name'], ['clientName', 'Client'],
 ];
 
@@ -263,7 +263,7 @@ function validateSequence(seq) {
 /* ---------- LinkedIn URLs & names ---------- */
 /* Strict check: only real LinkedIn person links pass (profile /in/…, legacy /pub/…, Sales Navigator lead).
    Returns { ok: true, url, key, slug, kind } or { ok: false, error }. */
-const LI_SLUG = /^[\p{L}\p{N}][\p{L}\p{N}_\-]{2,99}$/u;
+const LI_SLUG = /^[\p{L}\p{N}][^\s\/?#,]{2,99}$/u;
 function checkLinkedIn(raw) {
   let s = String(raw || '').trim().replace(/^<|>$/g, '').replace(/^["']|["']$/g, '');
   if (!s) return { ok: false, error: 'Paste the LinkedIn profile URL.' };
@@ -417,6 +417,7 @@ function templateValues(p, client, sender) {
   return {
     firstName: p.firstName, lastName: p.lastName, fullName: [p.firstName, p.lastName].filter(Boolean).join(' '),
     company: p.company, title: p.title, position: p.position || positionFromHeadline(p.title), location: p.location,
+    painPoint: p.painPoint, country: p.country,
     senderName: sn, senderFirstName: sn.split(' ')[0], clientName: client && client.name,
   };
 }
@@ -618,6 +619,7 @@ const ACTIVITY_KINDS = {
   replied: { label: 'Replied', icon: 'reply', tone: 'reply' },
   status: { label: 'Outcome', icon: 'flag', tone: 'good' },
   reminder: { label: 'Reminder', icon: 'bell', tone: 'today' },
+  engage: { label: 'Engagement', icon: 'thumbsUp', tone: 'reply' },
   withdrawn: { label: 'Withdrawn', icon: 'logout', tone: 'muted' },
   note: { label: 'Note', icon: 'edit', tone: 'neutral' },
   admin: { label: 'Update', icon: 'sliders', tone: 'neutral' },
@@ -627,6 +629,7 @@ function activityKind(e) {
   if (e.kind === 'accepted' || e.kind === 'replied' || e.kind === 'status' || e.kind === 'withdrawn' || e.kind === 'note') return e.kind;
   if (e.kind === 'reminder' || e.kind === 'reminder_done') return 'reminder';
   if (e.kind === 'added') return 'added';
+  if (e.kind === 'engage') return 'engage';
   return 'admin';
 }
 function activityText(e) {
@@ -646,16 +649,139 @@ function activityText(e) {
     case 'restarted': return 'Sequence restarted';
     case 'sequence': return e.note || 'Sequence changed';
     case 'list': return e.note || 'List changed';
+    case 'engage': return (ENGAGE_TYPES[e.channel] || ENGAGE_TYPES.other).label;
     case 'note': return 'Note';
     default: return e.kind;
   }
 }
-function activityNote(e) { return e.note && e.kind !== 'added' && e.kind !== 'sequence' && e.kind !== 'list' ? e.note : ''; }
+function activityNote(e) { return e.note && e.kind !== 'added' && !(e.kind === 'engage' && e.note === (ENGAGE_TYPES[e.channel] || {}).label) && e.kind !== 'sequence' && e.kind !== 'list' ? e.note : ''; }
 function actSetList(p, listId, listName, on, by) {
   const q = prep(p);
   q.listId = listId || null;
   q.log.push(entry('list', on, by, { note: listId ? 'Added to list "' + listName + '"' : 'Removed from list' }));
   return withId(touch(q), p);
+}
+
+/* ---------- relationship fields & engagement ---------- */
+const POTENTIALS = { high: { label: 'High', tone: 'good', rank: 0 }, medium: { label: 'Medium', tone: 'today', rank: 1 }, low: { label: 'Low', tone: 'muted', rank: 2 } };
+function normPotential(v) {
+  const s = String(v || '').trim().toLowerCase();
+  if (!s) return '';
+  if (/^(h|high|hot|a|3|top)\b/.test(s)) return 'high';
+  if (/^(m|med|medium|warm|b|2|mid)/.test(s)) return 'medium';
+  if (/^(l|low|cold|c|1)\b/.test(s)) return 'low';
+  return '';
+}
+const ENGAGE_TYPES = {
+  they_engaged: { label: 'They liked or commented on our post', inbound: true },
+  they_viewed: { label: 'They viewed our profile', inbound: true },
+  we_commented: { label: 'We commented on their post' },
+  we_liked: { label: 'We liked their post' },
+  call: { label: 'Phone call' },
+  whatsapp: { label: 'WhatsApp message' },
+  email: { label: 'Email' },
+  meeting: { label: 'Met (video or in person)' },
+  other: { label: 'Other interaction' },
+};
+function actEngage(p, channel, note, on, by) {
+  const q = prep(p);
+  q.log.push(entry('engage', on, by, { channel: ENGAGE_TYPES[channel] ? channel : 'other', note }));
+  return withId(touch(q), p);
+}
+/* Last time anything happened with this person (any logged activity). */
+function lastTouchOn(p) { const l = p.log || []; return l.length ? l[l.length - 1].on : (p.addedOn || null); }
+
+/* "23 Sep", "Sep 23", "23/09/2026", "2026-09-23", "23-Sep-26", Excel serial numbers → YYYY-MM-DD (or null). */
+function parseLooseDate(raw, today) {
+  const s = String(raw == null ? '' : raw).trim().replace(/(\d)(st|nd|rd|th)\b/gi, '$1');
+  if (!s) return null;
+  const t = today || todayISO();
+  const ty = dateOf(t).getFullYear();
+  const MON = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+  const mk = (y, m, d, guessYear) => {
+    if (!(m >= 1 && m <= 12 && d >= 1 && d <= 31)) return null;
+    let yy = y == null ? ty : (y < 100 ? 2000 + y : y);
+    const dt = new Date(yy, m - 1, d, 12);
+    if (dt.getMonth() !== m - 1) return null;
+    let iso = isoOf(dt);
+    if (guessYear && iso > addDays(t, 31)) iso = isoOf(new Date(yy - 1, m - 1, d, 12));
+    return iso;
+  };
+  let m;
+  if (/^\d{5}(\.\d+)?$/.test(s)) { const n = Math.floor(parseFloat(s)); if (n > 30000 && n < 70000) { const d = new Date(1899, 11, 30, 12); d.setDate(d.getDate() + n); return isoOf(d); } }
+  if ((m = s.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/))) return mk(+m[1], +m[2], +m[3], false);
+  if ((m = s.match(/^(\d{1,2})[\s\-\/.]*([A-Za-z]{3,9})\.?(?:[\s\-\/,]+(\d{2,4}))?$/)) && MON[m[2].slice(0, 3).toLowerCase()]) return mk(m[3] ? +m[3] : null, MON[m[2].slice(0, 3).toLowerCase()], +m[1], !m[3]);
+  if ((m = s.match(/^([A-Za-z]{3,9})\.?[\s\-\/]*(\d{1,2})(?:[\s,\-\/]+(\d{2,4}))?$/)) && MON[m[1].slice(0, 3).toLowerCase()]) return mk(m[3] ? +m[3] : null, MON[m[1].slice(0, 3).toLowerCase()], +m[2], !m[3]);
+  if ((m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})(?:[\/\-.](\d{2,4}))?$/))) {
+    let d = +m[1], mo = +m[2];
+    if (mo > 12 && d <= 12) { const x = d; d = mo; mo = x; }
+    return mk(m[3] ? +m[3] : null, mo, d, !m[3]);
+  }
+  return null;
+}
+/* Free-text status from a spreadsheet → what it means here. */
+function mapStatusText(raw) {
+  const s = String(raw || '').trim().toLowerCase();
+  if (!s) return null;
+  if (/not interested|no interest|rejected|declined|unsubscribe|^no$/.test(s)) return 'not_interested';
+  if (/meeting|call booked|demo|booked|scheduled|won|client|closed/.test(s)) return 'meeting';
+  if (/interested|hot|warm|positive/.test(s)) return 'interested';
+  if (/later|nurture|not now|follow up later/.test(s)) return 'nurture';
+  if (/repl|respond|answered/.test(s)) return 'replied';
+  if (/withdraw/.test(s)) return 'withdrawn';
+  if (/no reply|no response|ghost|finished|completed/.test(s)) return 'finished';
+  if (/accept|connected/.test(s)) return 'accepted';
+  if (/pending|sent|invited|request/.test(s)) return 'invited';
+  return null;
+}
+/* Titles that ended up in a "Company" column ("Founder", "CEO", "Managing Director"…). */
+const TITLE_RE = /\b(founder|co[\s-]?founder|ceo|cto|coo|cfo|cmo|cmd|md|director|directer|directore|owner|partner|partne|head|manager|chairman|chariman|chair|president|executive|consultant|strategist|developer|engineer|lead|officer|vp|vice|plant|supplier|manufacturer|research|operations?|proprietor|principal)\b/i;
+function looksLikeTitle(v) { const s = String(v || '').trim(); return !!s && s.length <= 60 && TITLE_RE.test(s) && !/\b(pvt|ltd|llp|inc|limited|industries|international|group|solutions|technologies|enterprises?|company)\b/i.test(s); }
+
+/* Turns an imported spreadsheet row into a prospect with real history.
+   opts.connMeaning: 'sent' (request sent that day) | 'accepted' (connected that day) | 'none'
+   opts.lastMeaning: 'replied' | 'messaged' | 'engaged' | 'none' */
+function prospectFromRow(row, opts) {
+  const T = opts.today;
+  const seq = opts.seq;
+  const by = opts.by || null;
+  const conn = row.connectionDate && row.connectionDate <= T ? row.connectionDate : null;
+  const start = conn || (isISODate(opts.startOn) ? opts.startOn : T);
+  let p = newProspect(Object.assign({}, row, { clientId: opts.clientId, senderId: opts.senderId, listId: opts.listId || null, startOn: start }),
+    { seq, today: conn || T, by, source: opts.source || 'Spreadsheet import' });
+  if (p.log && p.log[0]) p.log[0].ts = tsOf(start, '09:30');
+  const stamp = (fn, on) => { const n = (p.log || []).length; p = fn(); retime(p, n, on, '10:00'); };
+  const c = connectIndex(seq);
+  if (conn && opts.connMeaning !== 'none' && seq && c !== -1) {
+    if (c > 0) { p.stepIndex = c; p.stepId = seq.steps[c].id; }
+    stamp(() => actCompleteStep(p, seq, conn, by), conn);
+    if (opts.connMeaning === 'accepted') stamp(() => actAccept(p, seq, conn, by), conn);
+  }
+  const L = row.lastInteraction && row.lastInteraction <= T ? row.lastInteraction : null;
+  if (L && opts.lastMeaning && opts.lastMeaning !== 'none') {
+    if ((opts.lastMeaning === 'replied' || opts.lastMeaning === 'messaged') && p.status === 'invited') {
+      stamp(() => actAccept(p, seq, L, by), L);
+      p.log[p.log.length - 1].note = 'Assumed from the spreadsheet (they ' + (opts.lastMeaning === 'replied' ? 'replied' : 'were messaged') + ')';
+    }
+    if (opts.lastMeaning === 'replied') stamp(() => actReply(p, seq, L, by, 'From spreadsheet: last interaction ' + fmtShort(L)), L);
+    else if (opts.lastMeaning === 'messaged' && (p.status === 'active' || p.status === 'queued')) stamp(() => actCompleteStep(p, seq, L, by), L);
+    else if (opts.lastMeaning === 'engaged') stamp(() => actEngage(p, 'other', 'From spreadsheet', L, by), L);
+  }
+  const st = mapStatusText(row.status);
+  if (st) {
+    const on = L || conn || T;
+    if (st === 'accepted' && p.status === 'invited') stamp(() => actAccept(p, seq, on, by), on);
+    else if (st === 'replied' && p.status !== 'replied') stamp(() => actReply(p, seq, on, by, 'Status in spreadsheet: ' + row.status), on);
+    else if (['interested', 'meeting', 'not_interested', 'nurture', 'finished', 'withdrawn'].indexOf(st) !== -1) {
+      if (p.status !== 'replied' && st !== 'finished' && st !== 'withdrawn') stamp(() => actReply(p, seq, on, by, 'Status in spreadsheet: ' + row.status), on);
+      stamp(() => actSetStatus(p, seq, st, on, by, { note: 'From spreadsheet' }), on);
+    }
+  }
+  const nf = row.nextFollowUp;
+  if (nf) { p.followUpOn = nf; p.followUpNote = 'Follow up (from spreadsheet)'; }
+  if (row.nameFromUrl) p.nameFromUrl = true;
+  delete p.id; p.id = prospectDocId(row.norm.key);
+  return p;
 }
 
 /* ---------- creating prospects ---------- */
@@ -670,6 +796,7 @@ function newProspect(f, ctx) {
     firstName: String(f.firstName || '').trim(), lastName: String(f.lastName || '').trim(),
     title: String(f.title || '').trim(), position: String(f.position || '').trim(), company: String(f.company || '').trim(),
     location: String(f.location || '').trim(), email: String(f.email || '').trim(),
+    country: String(f.country || '').trim(), painPoint: String(f.painPoint || '').trim(), potential: normPotential(f.potential),
     url: f.norm.url, urlKey: f.norm.key, urlKind: f.norm.kind,
     tags: Array.isArray(f.tags) ? f.tags : String(f.tags || '').split(',').map(t => t.trim()).filter(Boolean),
     notes: String(f.notes || '').trim(),
@@ -781,7 +908,7 @@ function taskOrder(x, y) {
   if (tx !== ty) return tx < ty ? -1 : 1;
   return (GROUP_RANK[x.group] - GROUP_RANK[y.group]) || byText(fullName(x.p), fullName(y.p));
 }
-const DONE_KINDS = { step: 1, accepted: 1, replied: 1, withdrawn: 1, reminder_done: 1, status: 1, skipped: 1 };
+const DONE_KINDS = { step: 1, accepted: 1, replied: 1, withdrawn: 1, reminder_done: 1, status: 1, skipped: 1, engage: 1 };
 
 /* Builds everything the Today screen shows.
    data: { clients, seqs, prospects[], settings }   opts: { today, clientId, operatorId } */
@@ -1060,12 +1187,19 @@ function toCSV(rows) { return rows.map(r => r.map(csvCell).join(',')).join('\r\n
 const IMPORT_FIELDS = [
   { key: 'url', label: 'LinkedIn URL', required: true },
   { key: 'fullName', label: 'Full name', re: /^(full[\s_-]*)?name$|^contact$|^person$|^lead$|^prospect$/i },
-  { key: 'firstName', label: 'First name', re: /first/i },
-  { key: 'lastName', label: 'Last name', re: /last|surname|family/i },
+  { key: 'firstName', label: 'First name', re: /^first[\s_-]*name$|^first$|^given[\s_-]*name$|^fname$/i },
+  { key: 'lastName', label: 'Last name', re: /^last[\s_-]*name$|^last$|^surname$|^family[\s_-]*name$|^lname$/i },
   { key: 'title', label: 'Headline', re: /headline|summary|tagline/i },
   { key: 'position', label: 'Position / job title', re: /title|position|role|job|designation/i },
   { key: 'company', label: 'Company', re: /company|organi[sz]ation|employer|account/i, not: /url|linkedin|website|domain|size|industry|id$/i },
-  { key: 'location', label: 'Location', re: /location|city|country|region|geo/i },
+  { key: 'location', label: 'Location / city', re: /location|city|region|geo/i },
+  { key: 'country', label: 'Country', re: /country|nation/i },
+  { key: 'potential', label: 'Potential', re: /potential|priority|score|rating|fit/i },
+  { key: 'painPoint', label: 'Interest / pain point', re: /pain|interest|need|challenge/i },
+  { key: 'connectionDate', label: 'Connection date', re: /connection date|connected|invite|request|sent on|date sent/i },
+  { key: 'lastInteraction', label: 'Last interaction', re: /last interaction|last contact|last touch|last activity|replied on/i },
+  { key: 'nextFollowUp', label: 'Next follow-up', re: /next follow|follow.?up date|follow.?up on|next action/i },
+  { key: 'status', label: 'Status', re: /^status$|stage|state/i },
   { key: 'email', label: 'Email', re: /e-?mail/i },
   { key: 'tags', label: 'Tags', re: /tag|segment|campaign|list/i },
   { key: 'notes', label: 'Notes', re: /note|comment|icebreaker|personali[sz]/i },

@@ -2,3 +2,6 @@
 .claude/
 node_modules/
 .wrangler/
+*.csv
+*.xlsx
+/imports/

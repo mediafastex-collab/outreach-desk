@@ -579,19 +579,72 @@ function backupJSON(data) {
     settings: data.settings, clients: Object.values(data.clients), sequences: Object.values(data.seqs), prospects: data.prospects,
   }, null, 1);
 }
-async function restoreBackup(text) {
+async function restoreBackup(text, fileName) {
   let obj;
-  try { obj = JSON.parse(text); } catch (e) { UI.toast('That file is not a valid backup.', { bad: true }); return; }
-  if (!obj || obj.app !== 'fastex-outreach-desk' || !Array.isArray(obj.clients)) { UI.toast('That file is not an Outreach Desk backup.', { bad: true }); return; }
-  if (!W.guard()) return;
+  try { obj = JSON.parse(text); } catch (e) { UI.toast('That file is not a valid backup or import file.', { bad: true }); return; }
+  if (!obj || obj.app !== 'fastex-outreach-desk' || !Array.isArray(obj.clients)) { UI.toast('That file is not an Outreach Desk backup or import file.', { bad: true }); return; }
+  UI.open('importFile', { obj, fileName });
+}
+
+/* Preview and import a backup or a prepared import file. Never touches existing records unless asked. */
+function ImportFileModal({ obj, fileName }) {
+  const data = currentData();
+  const [overwrite, setOverwrite] = useState(false);
+  const [withSettings, setWithSettings] = useState(false);
+  const [progress, setProgress] = useState(null);
+  const exists = path => {
+    const parts = path.split('/');
+    if (parts[0] === 'clients' && parts.length === 2) return !!data.clients[parts[1]];
+    if (parts[0] === 'sequences') return !!data.seqs[parts[1]];
+    if (parts[0] === 'meta') return !!(Store.active() && Store.active().settingsDoc);
+    return !!findProspect(parts[1], parts[3]);
+  };
   const items = [];
-  if (obj.settings) items.push(['meta/settings', obj.settings]);
-  (obj.sequences || []).forEach(s => s && s.id && items.push(['sequences/' + s.id, s]));
-  (obj.clients || []).forEach(c => c && c.id && items.push(['clients/' + c.id, c]));
-  (obj.prospects || []).forEach(p => p && p.id && p.clientId && items.push([prospectPath(p), p]));
-  UI.toast('Restoring ' + plural(items.length, 'record') + '…');
-  const res = await W.many(items, it => W.put(it[0], it[1], true));
-  UI.toast(res.failed ? res.failed + ' records failed to restore.' : 'Backup restored: ' + plural(items.length, 'record') + '.', res.failed ? { bad: true } : null);
+  if (obj.settings && withSettings) items.push(['meta/settings', obj.settings]);
+  (obj.sequences || []).forEach(x => x && x.id && items.push(['sequences/' + x.id, x]));
+  (obj.clients || []).forEach(x => x && x.id && items.push(['clients/' + x.id, x]));
+  (obj.prospects || []).forEach(x => x && x.id && x.clientId && items.push([prospectPath(x), x]));
+  const fresh_ = items.filter(it => !exists(it[0]));
+  const todo = overwrite ? items : fresh_;
+  const statusCounts = {};
+  (obj.prospects || []).forEach(x => { statusCounts[x.status] = (statusCounts[x.status] || 0) + 1; });
+  const run = async () => {
+    if (!W.guard()) return;
+    const be = Store.active() && Store.active().backend;
+    setProgress({ done: 0, total: todo.length });
+    let failed = 0;
+    if (be && be.batch) {
+      for (let k = 0; k < todo.length; k += 80) {
+        const chunk = todo.slice(k, k + 80);
+        try { await be.batch(chunk.map(it => ({ path: it[0], data: stripDoc(it[1]) })), []); }
+        catch (e) { failed += chunk.length; }
+        setProgress({ done: Math.min(todo.length, k + 80), total: todo.length });
+      }
+      if (be.sync) await be.sync();
+    } else {
+      const res = await W.many(todo, it => W.put(it[0], it[1], true), (d, t) => setProgress({ done: d, total: t }));
+      failed = res.failed;
+    }
+    UI.close();
+    UI.toast(failed ? failed + ' records failed. Run the import again; finished ones are skipped.' : 'Imported ' + plural(todo.length - failed, 'record') + '.', failed ? { bad: true } : null);
+  };
+  const n = k => (obj[k] || []).length;
+  return html`<${Modal} title=${obj.label ? 'Import: ' + obj.label : 'Restore a backup'} sub=${fileName || ''}
+    foot=${progress ? html`<span class="left mono muted">Importing ${progress.done} of ${progress.total}…</span>` : html`
+      <button type="button" class="btn" onClick=${() => UI.close()}>Cancel</button>
+      <button type="button" class="btn primary" disabled=${!todo.length} onClick=${run}>Import ${plural(todo.length, 'record')}</button>`}>
+    <div class="seq-summary">
+      <div><span class="k">Clients</span><span class="v">${n('clients')}</span></div>
+      <div><span class="k">Sequences</span><span class="v">${n('sequences')}</span></div>
+      <div><span class="k">Prospects</span><span class="v">${n('prospects')}</span></div>
+      <div><span class="k">Already here</span><span class="v">${items.length - fresh_.length}</span></div>
+    </div>
+    ${(obj.clients || []).length > 0 && html`<p class="soft" style="font-size:13px">Clients: ${obj.clients.map(c => c.name).join(', ')}</p>`}
+    ${Object.keys(statusCounts).length > 0 && html`<div class="counts-row">${Object.keys(statusCounts).map(k => html`<span key=${k} class=${'pill tone-' + ((STATUSES[k] || {}).tone || 'neutral')}>${statusCounts[k]} ${((STATUSES[k] || {}).label || k).toLowerCase()}</span>`)}</div>`}
+    <label class="check"><input id="imp-over" type="checkbox" checked=${overwrite} onChange=${e => setOverwrite(e.target.checked)} />Replace records that already exist (otherwise they are left exactly as they are)</label>
+    ${obj.settings && html`<label class="check"><input id="imp-set" type="checkbox" checked=${withSettings} onChange=${e => setWithSettings(e.target.checked)} />Also restore settings and team from the file</label>`}
+    <p class="muted" style="font-size:12.5px">Safe to run twice: with replacing off, anything already imported is skipped.</p>
+  <//>`;
 }
 
 function SettingsView() {
@@ -602,7 +655,7 @@ function SettingsView() {
   const save = patch => W.guard() && W.saveSettings(patch).then(ok => ok && UI.toast('Settings saved.'));
   const toggleDay = d => { const set = new Set(s.workDays || []); if (set.has(d)) set.delete(d); else set.add(d); save({ workDays: Array.from(set).sort() }); };
   const docCount = 1 + Object.keys(data.clients).length + Object.keys(data.seqs).length + data.prospects.length;
-  const onRestore = async e => { const f = e.target.files && e.target.files[0]; if (!f) return; restoreBackup(await readFileText(f)); e.target.value = ''; };
+  const onRestore = async e => { const f = e.target.files && e.target.files[0]; if (!f) return; restoreBackup(await readFileText(f), f.name); e.target.value = ''; };
   const storage = Store.mode === 'server' ? 'Saved in your shared Cloudflare workspace. Everyone who opens the desk with the team passcode sees the same data; changes from teammates appear within a few seconds.'
     : Store.mode === 'cloud' ? 'Saved in this page\'s shared storage. Everyone you share it with (with edit access) sees the same data, live.'
     : 'Saved in this browser only. Export a backup regularly, or open the published page to share with your team.';
@@ -669,7 +722,7 @@ function SettingsView() {
               <button type="button" class="btn" onClick=${() => saveFile('outreach-backup-' + TODAY + '.json', backupJSON(data))}><${Icon} n="download" s=${14} />Export backup (JSON)</button>
               <button type="button" class="btn" disabled=${!data.prospects.length} onClick=${() => saveFile('prospects-' + TODAY + '.csv', prospectsCSV(data.prospects.map(p => ({ p, next: nextAction(p, data, TODAY) })), data))}><${Icon} n="download" s=${14} />Export prospects (CSV)</button>
             </div>
-            <label class="field"><span>Restore a backup <span class="hint">adds or overwrites records with the same id</span></span>
+            <label class="field"><span>Import a backup or prepared file <span class="hint">you see a preview before anything is saved</span></span>
               <input id="set-restore" type="file" accept=".json,application/json" class="input" onChange=${onRestore} /></label>
             ${Store.mode === 'cloud' && html`<p class="muted" style="font-size:12.5px">Shared storage holds up to about 25,000 records.</p>`}
             ${Store.mode === 'server' && html`<div class="btn-row">

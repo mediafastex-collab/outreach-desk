@@ -20,6 +20,9 @@ const GUIDES = {
     steps: [
       { icon: 'plus', title: 'Add people', body: '"Add prospect" adds one person. "Add in bulk" lets you paste a list of LinkedIn URLs or import a CSV. Only real LinkedIn profile links (linkedin.com/in/…) are accepted.', tip: 'Duplicates inside the same client are skipped automatically.' },
       { icon: 'copy', title: 'Fill in headline, position and company in one click', body: 'Use "Paste from LinkedIn": on the person\'s profile, click the "Copy to Outreach Desk" bookmark (or select the top of the profile and copy), then paste. Name, position, company, headline, location and URL fill in for you.', tip: 'Set up the bookmark once from "Get the one-click bookmark" in any paste box.' },
+      { icon: 'flag', title: 'Potential, country and pain point', body: 'Mark each person High, Medium or Low potential, add their country and their interest or pain point. Filter and sort by them, and use {{painPoint}} in messages. "Needs details" shows people whose name came from the URL or who have no company or position yet.' },
+      { icon: 'thumbsUp', title: 'Log engagement', body: 'Liked or commented on your post, viewed your profile, a call, a WhatsApp: use "Log engagement" in a person\'s ••• menu. It goes into their history without moving their sequence.' },
+      { icon: 'upload', title: 'Import a spreadsheet with its history', body: 'Add in bulk → Import CSV reads columns like Connection date, Last interaction, Status, Potential and Country. You choose what each date means, see how many people land in each status, then import. Job titles in the Company column are moved to Position for you.' },
       { icon: 'list', title: 'Organise with lists', body: 'Pick a client in the filter to see its lists (for example "Heads of Data" or "Webinar attendees"). "Create a list" or "Manage lists" adds more.' },
       { icon: 'search', title: 'Find anyone fast', body: 'Search by name, company, headline or tag, and use the status chips to see who is waiting, in sequence, replied and so on.', tip: 'Press Ctrl+K (Cmd+K on a Mac) anywhere to jump to a person.' },
       { icon: 'user', title: 'Open a person', body: 'Click a name to see their journey (Invite → Accepted → Message 1 → …), the next message, reminders and the full history with times. The buttons there do the same as on Today.' },
@@ -68,7 +71,7 @@ const GUIDES = {
     steps: [
       { icon: 'users', title: 'Account managers & team', body: 'Add everyone who manages clients or runs LinkedIn accounts. Then pick "On this device, I am" so the work you log is signed with your name.' },
       { icon: 'calendar', title: 'Working days and reminder', body: 'Due dates on non-working days move to the next working day. The Google Calendar button adds a weekday reminder to open the desk.' },
-      { icon: 'download', title: 'Backups', body: 'Export a backup now and then. You can restore it on another computer or browser.' },
+      { icon: 'download', title: 'Backups and prepared imports', body: 'Export a backup now and then. "Import a backup or prepared file" shows a preview first and skips anything already there, so running it twice is safe.' },
     ],
   },
 };

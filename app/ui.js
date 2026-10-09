@@ -14,7 +14,7 @@ const UI = {
   modal: null,
   toasts: [],
   todayFilter: { clientId: '', operatorId: '', group: 'all', listId: '' },
-  prospectFilter: { q: '', clientId: '', senderId: '', status: '', sequenceId: '', tag: '', sort: 'next', listId: '' },
+  prospectFilter: { q: '', clientId: '', senderId: '', status: '', sequenceId: '', tag: '', sort: 'next', listId: '', potential: '', country: '', needs: false },
   activityFilter: { period: '7d', clientId: '', listId: '', memberId: '', kind: '' },
   seqScope: '',
   reportFilter: { clientId: '', period: '30d' },

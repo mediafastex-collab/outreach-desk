@@ -16,7 +16,7 @@ function StepDots({ p, seq }) {
 }
 
 function prospectsCSV(rows, data) {
-  const head = ['Client', 'LinkedIn account', 'First name', 'Last name', 'Position', 'Headline', 'Company', 'Location', 'Email', 'LinkedIn URL', 'Status', 'Sequence', 'Current step', 'Next due', 'Added', 'Invited', 'Accepted', 'Replied', 'Tags', 'Notes'];
+  const head = ['Client', 'LinkedIn account', 'First name', 'Last name', 'Position', 'Headline', 'Company', 'Location', 'Email', 'LinkedIn URL', 'Status', 'Potential', 'Country', 'Pain point', 'Sequence', 'Current step', 'Next due', 'Added', 'Invited', 'Accepted', 'Replied', 'Tags', 'Notes'];
   const out = [head];
   for (const { p, next } of rows) {
     const c = data.clients[p.clientId];
@@ -24,7 +24,7 @@ function prospectsCSV(rows, data) {
     const seq = data.seqs[p.sequenceId];
     const i = seq ? stepIndexOf(p, seq) : -1;
     out.push([c ? c.name : '', s ? s.name : '', p.firstName, p.lastName, p.position || positionFromHeadline(p.title), p.title, p.company, p.location, p.email, p.url,
-      (STATUSES[p.status] || {}).label || p.status, seq ? seq.name : '', seq && i < seq.steps.length ? stepTitle(seq, i) : '',
+      (STATUSES[p.status] || {}).label || p.status, (POTENTIALS[p.potential] || {}).label || '', p.country || '', p.painPoint || '', seq ? seq.name : '', seq && i < seq.steps.length ? stepTitle(seq, i) : '',
       next && next.due ? next.due : '', p.addedOn || '', p.invitedOn || '', p.acceptedOn || '', p.repliedOn || '', (p.tags || []).join(', '), p.notes || '']);
   }
   return toCSV(out);
@@ -41,8 +41,10 @@ function ProspectsView() {
   const scoped = useMemo(() => data.prospects.filter(p =>
     (!f.clientId || p.clientId === f.clientId) && (!f.senderId || p.senderId === f.senderId) &&
     (!f.sequenceId || p.sequenceId === f.sequenceId) && (!f.tag || (p.tags || []).indexOf(f.tag) !== -1) &&
+    (!f.potential || (f.potential === '_none' ? !p.potential : p.potential === f.potential)) &&
+    (!f.country || (p.country || '') === f.country) && (!f.needs || needsDetails(p)) &&
     (!f.clientId || !f.listId || (f.listId === '_none' ? !p.listId : p.listId === f.listId)) &&
-    (!q || haystack(p).indexOf(q) !== -1)), [data, f.clientId, f.senderId, f.sequenceId, f.tag, f.listId, q]);
+    (!q || haystack(p).indexOf(q) !== -1)), [data, f.clientId, f.senderId, f.sequenceId, f.tag, f.listId, f.potential, f.country, f.needs, q]);
   const lists = client ? listsOf(data, client.id) : [];
   const listCounts = useMemo(() => {
     const m = { _all: 0, _none: 0 };
@@ -56,6 +58,8 @@ function ProspectsView() {
     const out = list.map(p => ({ p, next: nextAction(p, data, TODAY) }));
     const nm = x => fullName(x.p);
     if (f.sort === 'name') out.sort((a, b) => byText(nm(a), nm(b)));
+    else if (f.sort === 'potential') out.sort((a, b) => ((POTENTIALS[a.p.potential] || { rank: 9 }).rank - (POTENTIALS[b.p.potential] || { rank: 9 }).rank) || byText(nm(a), nm(b)));
+    else if (f.sort === 'quiet') out.sort((a, b) => String(lastTouchOn(a.p) || '').localeCompare(String(lastTouchOn(b.p) || '')));
     else if (f.sort === 'added') out.sort((a, b) => (b.p.createdAt || '').localeCompare(a.p.createdAt || ''));
     else if (f.sort === 'activity') out.sort((a, b) => (lastTs(b.p)).localeCompare(lastTs(a.p)));
     else out.sort((a, b) => {
@@ -64,6 +68,8 @@ function ProspectsView() {
     });
     return out;
   }, [scoped, f.status, f.sort, data, TODAY]);
+  const countries = useMemo(() => Array.from(new Set(data.prospects.map(p => p.country).filter(Boolean))).sort(byText), [data]);
+  const needsCount = useMemo(() => data.prospects.filter(p => (!f.clientId || p.clientId === f.clientId) && needsDetails(p)).length, [data, f.clientId]);
   const tags = useMemo(() => { const s = new Set(); data.prospects.forEach(p => (p.tags || []).forEach(t => s.add(t))); return Array.from(s).sort(byText); }, [data]);
   const keyOf = p => p.clientId + '/' + p.id;
   const visible = rows.slice(0, limit);
@@ -121,11 +127,21 @@ function ProspectsView() {
       <${SequenceSelect} id="p-seq" cls="select sm" data=${data} value=${f.sequenceId} allowEmpty="All sequences" onChange=${v => setF({ sequenceId: v })} />
       ${tags.length > 0 && html`<select id="p-tag" class="select sm" value=${f.tag} onChange=${e => setF({ tag: e.target.value })}>
         <option value="" selected=${!f.tag}>All tags</option>${tags.map(t => html`<option key=${t} value=${t} selected=${f.tag === t}>${t}</option>`)}</select>`}
+      <select id="p-pot" class="select sm" value=${f.potential || ''} onChange=${e => setF({ potential: e.target.value })} aria-label="Potential">
+        <option value="" selected=${!f.potential}>Any potential</option>
+        ${Object.keys(POTENTIALS).map(k => html`<option key=${k} value=${k} selected=${f.potential === k}>${POTENTIALS[k].label} potential</option>`)}
+        <option value="_none" selected=${f.potential === '_none'}>Potential not set</option>
+      </select>
+      ${countries.length > 0 && html`<select id="p-country" class="select sm" value=${f.country || ''} onChange=${e => setF({ country: e.target.value })} aria-label="Country">
+        <option value="" selected=${!f.country}>All countries</option>${countries.map(c => html`<option key=${c} value=${c} selected=${f.country === c}>${c}</option>`)}</select>`}
+      ${needsCount > 0 && html`<button type="button" class=${'btn sm' + (f.needs ? ' primary' : '')} aria-pressed=${f.needs ? 'true' : 'false'} title="Name read from the LinkedIn URL, or no company and no position yet" onClick=${() => setF({ needs: !f.needs })}><${Icon} n="edit" s=${13} />Needs details · ${needsCount}</button>`}
       <select id="p-sort" class="select sm" value=${f.sort} onChange=${e => setF({ sort: e.target.value })} aria-label="Sort">
         <option value="next" selected=${f.sort === 'next'}>Sort: next due</option>
         <option value="added" selected=${f.sort === 'added'}>Sort: newest</option>
         <option value="activity" selected=${f.sort === 'activity'}>Sort: recent activity</option>
         <option value="name" selected=${f.sort === 'name'}>Sort: name</option>
+        <option value="potential" selected=${f.sort === 'potential'}>Sort: potential</option>
+        <option value="quiet" selected=${f.sort === 'quiet'}>Sort: longest without contact</option>
       </select>
     </div>
 
@@ -164,7 +180,7 @@ function ProspectsView() {
           const isSel = sel.has(keyOf(p));
           return html`<div class=${'prow' + (isSel ? ' sel' : '')} key=${keyOf(p)} role="row">
             <input type="checkbox" aria-label=${'Select ' + fullName(p)} checked=${isSel} onChange=${() => toggle(p)} />
-            <div class="who"><button type="button" onClick=${() => UI.openProspect(p)}>${fullName(p)}</button>
+            <div class="who"><button type="button" onClick=${() => UI.openProspect(p)}>${fullName(p)}</button>${p.potential && html` <${PotentialPill} v=${p.potential} />`}${p.nameFromUrl && html` <span class="pill tone-today" title="Name was read from the LinkedIn URL. Check it before messaging.">check name</span>`}
               <div class="sub">${roleLine(p) || p.url}</div></div>
             <div class="cl"><${ClientChip} client=${c} /><span class="sub">${s ? s.name : 'No account'}${p.listId && listName(data, p.clientId, p.listId) ? ' · ' + listName(data, p.clientId, p.listId) : ''}</span></div>
             <div><${StatusPill} status=${p.status} /></div>
@@ -317,7 +333,7 @@ function Timeline({ p, seq, data }) {
 }
 
 function DetailsForm({ p, data }) {
-  const init = () => ({ firstName: p.firstName || '', lastName: p.lastName || '', title: p.title || '', position: p.position || '', company: p.company || '', location: p.location || '', email: p.email || '', url: p.url || '', tags: (p.tags || []).join(', '), notes: p.notes || '', clientId: p.clientId, senderId: p.senderId || '' });
+  const init = () => ({ firstName: p.firstName || '', lastName: p.lastName || '', title: p.title || '', position: p.position || '', company: p.company || '', location: p.location || '', email: p.email || '', country: p.country || '', painPoint: p.painPoint || '', potential: p.potential || '', url: p.url || '', tags: (p.tags || []).join(', '), notes: p.notes || '', clientId: p.clientId, senderId: p.senderId || '' });
   const [v, setV] = useState(init);
   const [err, setErr] = useState('');
   useEffect(() => { setV(init()); setErr(''); }, [p.id, p.clientId]);
@@ -330,7 +346,7 @@ function DetailsForm({ p, data }) {
     const norm = normalizeLinkedIn(v.url);
     if (!norm) { setErr(checkLinkedIn(v.url).error); return; }
     if (!v.firstName.trim()) { setErr('First name is required.'); return; }
-    const patch = { firstName: v.firstName.trim(), lastName: v.lastName.trim(), title: v.title.trim(), position: v.position.trim(), company: v.company.trim(), location: v.location.trim(), email: v.email.trim(), tags: v.tags.split(',').map(t => t.trim()).filter(Boolean), notes: v.notes.trim() };
+    const patch = { firstName: v.firstName.trim(), lastName: v.lastName.trim(), title: v.title.trim(), position: v.position.trim(), company: v.company.trim(), location: v.location.trim(), email: v.email.trim(), country: v.country.trim(), painPoint: v.painPoint.trim(), potential: normPotential(v.potential), nameFromUrl: false, tags: v.tags.split(',').map(t => t.trim()).filter(Boolean), notes: v.notes.trim() };
     if (norm.key !== p.urlKey) {
       const newId = prospectDocId(norm.key);
       if (findProspect(p.clientId, newId)) { setErr('Another prospect in this client already has that URL.'); return; }
@@ -351,7 +367,10 @@ function DetailsForm({ p, data }) {
       <label class="field"><span>Position</span><input id="d-pos" class="input" placeholder="e.g. Head of Growth" value=${v.position} onInput=${set('position')} /></label>
       <label class="field"><span>Headline</span><input id="d-title" class="input" value=${v.title} onInput=${set('title')} /></label>
       <label class="field"><span>Company</span><input id="d-company" class="input" value=${v.company} onInput=${set('company')} /></label>
-      <label class="field"><span>Location</span><input id="d-location" class="input" value=${v.location} onInput=${set('location')} /></label>
+      <label class="field"><span>Location / city</span><input id="d-location" class="input" value=${v.location} onInput=${set('location')} /></label>
+      <label class="field"><span>Country</span><input id="d-country" class="input" list="country-list" value=${v.country} onInput=${set('country')} /></label>
+      <label class="field"><span>Potential</span><${PotentialSelect} id="d-pot" value=${v.potential} onChange=${x => setV(Object.assign({}, v, { potential: x }))} /></label>
+      <label class="field full"><span>Interest / pain point <span class="hint">usable in messages as {{painPoint}}</span></span><input id="d-pain" class="input" placeholder="e.g. Hiring sales reps is slow" value=${v.painPoint} onInput=${set('painPoint')} /></label>
       <label class="field full"><span>LinkedIn URL</span><input id="d-url" class="input" value=${v.url} onInput=${set('url')} /></label>
       <label class="field"><span>Email</span><input id="d-email" class="input" type="email" value=${v.email} onInput=${set('email')} /></label>
       <label class="field"><span>Tags <span class="hint">comma separated</span></span><input id="d-tags" class="input" value=${v.tags} onInput=${set('tags')} /></label>
@@ -405,12 +424,16 @@ function ProspectDrawer({ cid, pid }) {
           <${ClientChip} client=${client} />
           <span class="muted" style="font-size:12.5px">${sender ? sender.name : 'No account'}${op ? ' · ' + op : ''}</span>
           ${p.listId && listName(data, p.clientId, p.listId) && html`<span class="pill tone-neutral"><${Icon} n="list" s=${12} />${listName(data, p.clientId, p.listId)}</span>`}
+          ${p.potential && html`<${PotentialPill} v=${p.potential} />`}
+          ${p.country && html`<span class="pill tone-neutral">${p.country}</span>`}
+          ${p.nameFromUrl && html`<span class="pill tone-today" title="Name was read from the LinkedIn URL">Check the name</span>`}
           ${p.urlKind === 'salesnav' && html`<span class="pill tone-today">Sales Navigator link</span>`}
         </div>
         <div class="btn-row">
           <a class="btn sm" href=${p.url} target="_blank" rel="noopener noreferrer"><${Icon} n="external" s=${14} />Open on LinkedIn</a>
           <button type="button" class="btn sm" onClick=${() => openReminder(p)}><${Icon} n="bell" s=${14} />${p.followUpOn ? 'Change reminder' : 'Set reminder'}</button>
           <${Menu} icon="more" items=${[
+            { label: 'Log engagement…', icon: 'thumbsUp', onSelect: () => UI.open('engage', { p }) },
             { label: 'Move to another sequence…', icon: 'route', onSelect: () => UI.open('changeSeq', { ps: [p] }) },
             { label: p.listId ? 'Change list…' : 'Add to a list…', icon: 'list', onSelect: () => UI.open('setList', { ps: [p] }) },
             (STATUSES[p.status] || {}).open && p.status !== 'paused' ? { label: 'Pause', icon: 'pause', onSelect: () => Act.pause(p) } : null,
@@ -514,7 +537,10 @@ function AddProspectModal({ clientId }) {
         <label class="field"><span>Position</span><input id="a-pos" class="input" placeholder="e.g. Head of Growth" value=${v.position} onInput=${set('position')} /></label>
         <label class="field"><span>Headline</span><input id="a-title" class="input" placeholder="Their LinkedIn headline" value=${v.title} onInput=${set('title')} /></label>
         <label class="field"><span>Company</span><input id="a-company" class="input" value=${v.company} onInput=${set('company')} /></label>
-        <label class="field"><span>Location</span><input id="a-location" class="input" value=${v.location} onInput=${set('location')} /></label>
+        <label class="field"><span>Location / city</span><input id="a-location" class="input" value=${v.location} onInput=${set('location')} /></label>
+        <label class="field"><span>Country</span><input id="a-country" class="input" list="country-list" value=${v.country || ''} onInput=${set('country')} /></label>
+        <label class="field"><span>Potential</span><${PotentialSelect} id="a-pot" value=${v.potential || ''} onChange=${x => setV(Object.assign({}, v, { potential: x }))} /></label>
+        <label class="field full"><span>Interest / pain point <span class="hint">optional</span></span><input id="a-pain" class="input" value=${v.painPoint || ''} onInput=${set('painPoint')} /></label>
         <label class="field"><span>Client</span><${ClientSelect} id="a-client" data=${data} value=${v.clientId} onChange=${x => setV(Object.assign(blank(x), { url: v.url, firstName: v.firstName, lastName: v.lastName, title: v.title, company: v.company, location: v.location, email: v.email, tags: v.tags, notes: v.notes }))} /></label>
         <label class="field"><span>LinkedIn account</span><select id="a-sender" class="select" value=${v.senderId} onChange=${set('senderId')}>
           ${((client && client.senders) || []).map(s => html`<option key=${s.id} value=${s.id} selected=${v.senderId === s.id}>${s.name}</option>`)}
@@ -575,14 +601,21 @@ function buildImportRows(items, opts, data) {
     seen.add(norm.key);
     const existing = findProspect(opts.clientId, prospectDocId(norm.key));
     if (existing) { results.push({ status: 'exists', reason: 'Already in this client', line: it.line, name: fullName(existing) }); continue; }
-    let first = String(r.firstName || '').trim(), last = String(r.lastName || '').trim();
+    let first = String(r.firstName || '').trim(), last = String(r.lastName || '').trim(), nameFromUrl = false;
     if (!first && r.fullName) { const s = splitName(r.fullName); first = s.firstName; last = last || s.lastName; }
-    if (!first) { const s = nameFromSlug(norm.slug); first = s.firstName; last = last || s.lastName; }
+    if (!first) { const s = nameFromSlug(norm.slug); first = s.firstName; last = last || s.lastName; nameFromUrl = true; }
+    let company = String(r.company || '').trim(), position = String(r.position || '').trim();
+    if (opts.fixTitles && !position && looksLikeTitle(company)) { position = company; company = ''; }
+    const lastRaw = String(r.lastInteraction || '').trim(), lastDate = parseLooseDate(lastRaw, TODAY);
+    const extraNote = lastRaw && !lastDate ? 'From spreadsheet: ' + lastRaw : '';
     const tags = String(r.tags || '').split(/[,;|]/).map(t => t.trim()).filter(Boolean).concat(String(opts.tags || '').split(',').map(t => t.trim()).filter(Boolean));
     const elsewhere = data.prospects.some(x => x.urlKey === norm.key && x.clientId !== opts.clientId);
     results.push({
       status: first ? 'new' : 'noname', line: it.line, elsewhere,
-      fields: { norm, firstName: first, lastName: last, title: r.title || '', position: r.position || positionFromHeadline(r.title), company: opts.cleanCompany ? cleanCompany(r.company || companyFromHeadline(r.title)) : (r.company || companyFromHeadline(r.title) || ''), location: r.location || '', email: r.email || '', notes: r.notes || '', tags: Array.from(new Set(tags)) },
+      fields: { norm, firstName: first, lastName: last, nameFromUrl, title: r.title || '', position: position || positionFromHeadline(r.title), company: opts.cleanCompany ? cleanCompany(company || companyFromHeadline(r.title)) : (company || companyFromHeadline(r.title) || ''), location: r.location || '', email: r.email || '',
+        notes: [r.notes, extraNote].filter(Boolean).join(' · '), tags: Array.from(new Set(tags)),
+        country: r.country || '', potential: r.potential || '', painPoint: r.painPoint || '', status: r.status || '',
+        connectionDate: parseLooseDate(r.connectionDate, TODAY), lastInteraction: lastDate, nextFollowUp: parseLooseDate(r.nextFollowUp, TODAY) },
     });
   }
   return results;
@@ -592,7 +625,7 @@ function BulkAddModal({ clientId }) {
   const cid0 = defaultClientId(data, clientId);
   const c0 = data.clients[cid0];
   const [tab, setTab] = useState('paste');
-  const [opts, setOpts] = useState({ clientId: cid0, senderId: c0 && c0.senders && c0.senders[0] ? c0.senders[0].id : '', sequenceId: (c0 && c0.defaultSequenceId) || (Object.values(data.seqs).find(s => !s.archived) || {}).id || '', tags: '', startOn: TODAY, alreadyConnected: false, cleanCompany: true, listId: '', newList: '' });
+  const [opts, setOpts] = useState({ clientId: cid0, senderId: c0 && c0.senders && c0.senders[0] ? c0.senders[0].id : '', sequenceId: (c0 && c0.defaultSequenceId) || (Object.values(data.seqs).find(s => !s.archived) || {}).id || '', tags: '', startOn: TODAY, alreadyConnected: false, cleanCompany: true, listId: '', newList: '', fixTitles: true, connMeaning: 'sent', lastMeaning: 'replied' });
   const [paste, setPaste] = useState('');
   const [csv, setCsv] = useState(null);
   const [mapping, setMapping] = useState({});
@@ -609,7 +642,20 @@ function BulkAddModal({ clientId }) {
       return row.url ? { line: i + 2, row } : { line: i + 2, error: 'No URL in the mapped column' };
     });
   }, [tab, paste, csv, mapping]);
-  const results = useMemo(() => buildImportRows(items, opts, data), [items, opts.clientId, opts.tags, opts.cleanCompany, data]);
+  const results = useMemo(() => buildImportRows(items, opts, data), [items, opts.clientId, opts.tags, opts.cleanCompany, opts.fixTitles, data]);
+  const has = k => tab === 'csv' && mapping[k] !== undefined && mapping[k] !== '' && mapping[k] !== null;
+  const historyMode = has('connectionDate') || has('lastInteraction') || has('status') || has('nextFollowUp');
+  const titlesInCompany = useMemo(() => (!csv || !has('company')) ? 0 : csv.rows.filter(r => looksLikeTitle(r[mapping.company]) && (!has('position') || !String(r[mapping.position] || '').trim())).length, [csv, mapping]);
+  const buildDoc = (fields, seq, source) => historyMode
+    ? prospectFromRow(fields, { today: TODAY, seq, clientId: opts.clientId, senderId: opts.senderId, listId: null, connMeaning: has('connectionDate') ? opts.connMeaning : 'none', lastMeaning: has('lastInteraction') ? opts.lastMeaning : 'none', by: me(), source, startOn: opts.startOn })
+    : newProspect(Object.assign({}, fields, { clientId: opts.clientId, senderId: opts.senderId, startOn: opts.startOn, alreadyConnected: opts.alreadyConnected }), { seq, today: TODAY, by: me(), source });
+  const previewStatus = useMemo(() => {
+    const seq = data.seqs[opts.sequenceId];
+    if (!historyMode || !seq) return null;
+    const c = {};
+    results.filter(r => r.status === 'new').forEach(r => { const d = buildDoc(r.fields, seq, 'preview'); c[d.status] = (c[d.status] || 0) + 1; });
+    return c;
+  }, [results, historyMode, opts.connMeaning, opts.lastMeaning, opts.sequenceId]);
   const tally = { new: 0, exists: 0, dupe: 0, invalid: 0, noname: 0, elsewhere: 0 };
   results.forEach(r => { tally[r.status]++; if (r.elsewhere) tally.elsewhere++; });
   const onFile = async e => {
@@ -637,7 +683,7 @@ function BulkAddModal({ clientId }) {
     }
     setProgress({ done: 0, total: todo.length });
     const source = tab === 'paste' ? 'Pasted URLs' : 'CSV import';
-    const docs = todo.map(r => newProspect(Object.assign({}, r.fields, { clientId: opts.clientId, senderId: opts.senderId, startOn: opts.startOn, alreadyConnected: opts.alreadyConnected, listId }), { seq, today: TODAY, by: me(), source }));
+    const docs = todo.map(r => { const d = buildDoc(r.fields, seq, source); d.listId = listId || null; return d; });
     const res = await W.many(docs, p => W.put(prospectPath(p), p, true), (d, t) => setProgress({ done: d, total: t }));
     UI.close();
     const ok = docs.length - res.failed;
@@ -688,6 +734,25 @@ function BulkAddModal({ clientId }) {
               ${csv.header.map((h, i) => html`<option key=${i} value=${String(i)} selected=${mapping[f.key] === i}>${h || 'Column ' + (i + 1)}</option>`)}
             </select></label>`)}
         </div>
+        ${(historyMode || titlesInCompany > 0) && html`<div class="history-box">
+          <strong>This file has history. Here's how I'll read it:</strong>
+          ${titlesInCompany > 0 && html`<label class="check"><input id="b-fix" type="checkbox" checked=${opts.fixTitles} onChange=${setO('fixTitles')} />${titlesInCompany} rows have a job title (like "Founder" or "CEO") in the Company column. Move those into Position.</label>`}
+          ${has('connectionDate') && html`<label class="field"><span>"${csv.header[mapping.connectionDate]}" means</span>
+            <select id="b-conn" class="select sm" value=${opts.connMeaning} onChange=${setO('connMeaning')}>
+              <option value="sent" selected=${opts.connMeaning === 'sent'}>The day we sent the connection request (they wait for acceptance)</option>
+              <option value="accepted" selected=${opts.connMeaning === 'accepted'}>The day they accepted (Message 1 is due)</option>
+              <option value="none" selected=${opts.connMeaning === 'none'}>Ignore it (start fresh)</option>
+            </select></label>`}
+          ${has('lastInteraction') && html`<label class="field"><span>A date in "${csv.header[mapping.lastInteraction]}" means</span>
+            <select id="b-last" class="select sm" value=${opts.lastMeaning} onChange=${setO('lastMeaning')}>
+              <option value="replied" selected=${opts.lastMeaning === 'replied'}>They replied on that day (goes to Replies waiting)</option>
+              <option value="messaged" selected=${opts.lastMeaning === 'messaged'}>We sent the next message that day</option>
+              <option value="engaged" selected=${opts.lastMeaning === 'engaged'}>Some other interaction (history only)</option>
+              <option value="none" selected=${opts.lastMeaning === 'none'}>Ignore it</option>
+            </select><span class="hint">Words instead of a date (like "Retained") are kept as a note.</span></label>`}
+          ${has('status') && html`<p class="hint">Status words are matched automatically: "Interested", "Meeting", "Not interested", "Replied", "Connected", "Pending"…</p>`}
+          ${previewStatus && html`<div class="counts-row">${Object.keys(previewStatus).map(k => html`<span key=${k} class=${'pill tone-' + ((STATUSES[k] || {}).tone || 'neutral')}>${previewStatus[k]} ${((STATUSES[k] || {}).label || k).toLowerCase()}</span>`)}</div>`}
+        </div>`}
       </div>`}`}
     ${results.length > 0 && html`<div class="stack">
       <div class="counts-row">
@@ -802,6 +867,52 @@ function ListsModal({ clientId }) {
       <label class="field"><span>Default sequence</span><${SequenceSelect} id="le-new-s" cls="select sm" data=${data} clientId=${clientId} value=${seqId} allowEmpty="Client default" onChange=${setSeqId} /></label>
       <span></span>
       <button type="submit" class="btn sm" style="align-self:end" disabled=${!name.trim()}><${Icon} n="plus" s=${14} />Add</button>
+    </form>
+  <//>`;
+}
+
+/* ---------- relationship helpers ---------- */
+function needsDetails(p) { return !!(p.nameFromUrl || (!p.company && !(p.position || positionFromHeadline(p.title)))); }
+function PotentialPill({ v }) {
+  const x = POTENTIALS[v];
+  if (!x) return null;
+  return html`<span class=${'pill tone-' + x.tone} title=${x.label + ' potential'}>${x.label}</span>`;
+}
+function PotentialSelect({ id, value, onChange, cls }) {
+  return html`<select id=${id} class=${cls || 'select'} value=${value || ''} onChange=${e => onChange(e.target.value)}>
+    <option value="" selected=${!value}>Not set</option>
+    ${Object.keys(POTENTIALS).map(k => html`<option key=${k} value=${k} selected=${value === k}>${POTENTIALS[k].label}</option>`)}
+  </select>`;
+}
+const COMMON_COUNTRIES = ['India', 'United States', 'United Kingdom', 'United Arab Emirates', 'Canada', 'Australia', 'Singapore', 'Germany', 'Saudi Arabia', 'Netherlands'];
+function CountryList() { return html`<datalist id="country-list">${COMMON_COUNTRIES.map(c => html`<option key=${c} value=${c} />`)}</datalist>`; }
+
+/* ---------- engagement (relationship touches outside the sequence) ---------- */
+function EngageModal({ p: p0 }) {
+  const p = fresh(p0);
+  const [type, setType] = useState('they_engaged');
+  const [on, setOn] = useState(TODAY);
+  const [time, setTime] = useState('');
+  const [note, setNote] = useState('');
+  const submit = async e => {
+    e.preventDefault();
+    UI.close();
+    await Act.engage(p, type, note.trim(), on, time);
+  };
+  return html`<${Modal} title="Log engagement" sub=${fullName(p) + ' · does not move their sequence'} size="narrow"
+    foot=${html`<button type="button" class="btn" onClick=${() => UI.close()}>Cancel</button><button type="submit" form="engage-form" class="btn primary">Log it</button>`}>
+    <form id="engage-form" class="stack" onSubmit=${submit}>
+      <div class="checklist" style="max-height:none">
+        ${Object.keys(ENGAGE_TYPES).map(k => html`<label key=${k}>
+          <input type="radio" name="engage" checked=${type === k} onChange=${() => setType(k)} />
+          <span>${ENGAGE_TYPES[k].label}${ENGAGE_TYPES[k].inbound ? html` <span class="pill tone-good">warm signal</span>` : ''}</span><span></span>
+        </label>`)}
+      </div>
+      <div class="fields">
+        <label class="field"><span>Date</span><input id="eng-on" type="date" class="input" value=${on} onInput=${e => setOn(e.target.value)} /></label>
+        <label class="field"><span>Time (optional)</span><input id="eng-time" type="time" class="input" value=${time} onInput=${e => setTime(e.target.value)} /></label>
+      </div>
+      <label class="field"><span>Note (optional)</span><input id="eng-note" class="input" placeholder="e.g. Commented on our hiring post" value=${note} onInput=${e => setNote(e.target.value)} /></label>
     </form>
   <//>`;
 }

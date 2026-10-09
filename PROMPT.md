@@ -198,6 +198,16 @@ No automation, scraping or LinkedIn login. No deal pipeline, invoicing or email 
 - **Passcode screen** once per browser, "Sign out on this browser" in Settings, and a "Use this browser only" escape hatch.
 - **Upload old browser data.** A browser that saved data before the switch offers "Upload to shared workspace"; it copies only records the shared workspace doesn't already have.
 
+## Additions (round 7): learned from a client's own tracker
+
+A client's spreadsheet ("Relationship Tracker": Name, Profile URL, Company, Role, Connection Date, Last Interaction, Interest/Pain Point, Next Follow-up, Status, Potential, Country, Notes) showed what agencies track outside a sequence. Built:
+
+- **Relationship fields:** Potential (High / Medium / Low), Country, Interest / pain point on every prospect; filters, sort by potential and by "longest without contact", badges on lists and tasks, `{{painPoint}}` and `{{country}}` message variables, CSV export columns.
+- **Engagement log:** record touches outside the sequence (they liked or commented on our post, viewed our profile, we commented or liked, call, WhatsApp, email, meeting) with date and time; inbound ones are marked as warm signals; they never move the sequence.
+- **Import a spreadsheet with its history:** map Connection date, Last interaction, Status, Next follow-up, Potential, Country, Pain point; choose what each date means (request sent vs accepted; replied vs messaged vs other); preview how many people land in each status; job titles found in the Company column move to Position; names missing from the sheet are read from the URL and flagged; non-date notes like "Retained" are kept as notes; forgiving date parsing ("23 Sep", "23/09/2026", Excel serials).
+- **Needs details** filter: names read from the URL, or no company and no position.
+- **Prepared-file import with preview:** a backup or generated import shows counts and status breakdown first, skips records that already exist unless told to replace, and uploads in batches.
+
 ## Deliverables
 
 The working app, a short daily routine inside the app, and a list of assumptions made.

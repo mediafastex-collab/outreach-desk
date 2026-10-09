@@ -83,6 +83,7 @@ function TaskRow({ task, showClient }) {
       </div>
       <div class="task-meta">
         ${showClient && html`<${ClientChip} client=${task.client} />`}
+        ${p.potential && p.potential !== 'low' && html`<${PotentialPill} v=${p.potential} />`}
         <span class="task-step">${label}</span>
         ${task.kind !== 'reply' && (task.due < TODAY || task.time) && html`<${Due} due=${task.due} time=${task.time} />`}
         ${task.missing && task.missing.length > 0 && html`<span class="pill tone-overdue" title="These fields are empty on the prospect">Missing ${task.missing.join(', ')}</span>`}
