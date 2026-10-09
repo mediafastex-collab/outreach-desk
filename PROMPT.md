@@ -143,7 +143,7 @@ No automation, scraping or LinkedIn login. No deal pipeline, invoicing or email 
 
 ## Technical requirements (for this build)
 
-- Single-page web app that works on desktop and phone, in light and dark themes.
+- Single-page web app that works on desktop and phone, in a white (light) theme only.
 - Shared team data with live updates; falls back to browser storage when opened as a plain file.
 - All scheduling computed on the client from stored records; no server jobs.
 - LinkedIn URL normalization: accept `linkedin.com/in/...` with or without `https://` / `www`, query strings
@@ -170,7 +170,7 @@ No automation, scraping or LinkedIn login. No deal pipeline, invoicing or email 
 - **Send times.** Each step can carry a clock time ("Message 2 at 11:00"). Snoozes, reminders and back-dated logs take a time too. Today shows an hour-by-hour schedule and sorts timed tasks in clock order.
 - **Client-wise lists.** Each client has lists of prospects (by campaign, segment or source). A list can have its own default sequence. Filter Today, Prospects and Activity by list; add prospects to a list one by one, in bulk, or during import.
 - **Activity with type, date and time.** Every logged action is stored with its timestamp and who logged it. Prospects show their last activity; each prospect's history and a team-wide Activity screen show type, date and time, with filters and CSV export.
-- **Smoother use.** Ctrl/Cmd+K quick find, light/dark/auto theme switch, grouped schedule, list and sequence shortcuts on client cards.
+- **Smoother use.** Ctrl/Cmd+K quick find, grouped schedule, list and sequence shortcuts on client cards.
 
 ## Additions (round 3)
 

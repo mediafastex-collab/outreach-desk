@@ -395,14 +395,8 @@ async function createList(clientId, name, sequenceId) {
   return ok ? l : null;
 }
 
-/* ---------- theme (per viewer) ---------- */
-function applyTheme(t) {
-  try {
-    if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
-    else if (pref('theme')) document.documentElement.removeAttribute('data-theme');
-  } catch (e) { /* ignore */ }
-}
-applyTheme(pref('theme'));
+/* ---------- theme: always light ---------- */
+pref('theme', null); /* forget the old light/dark/auto choice */
 
 /* ---------- "Copy to Outreach Desk" bookmark (runs on a LinkedIn profile the user is viewing) ---------- */
 const BOOKMARKLET_SRC = "(function(){var href=location.href;if(!/linkedin\\.com\\/(in|pub|sales\\/lead)\\//i.test(href)){alert('Open a LinkedIn profile first, then click this bookmark.');return;}" +

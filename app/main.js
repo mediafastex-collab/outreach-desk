@@ -71,12 +71,6 @@ function QuickFind() {
 document.addEventListener('keydown', e => {
   if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); UI.open('find', {}); }
 });
-function ThemeToggle() {
-  const cur = pref('theme') || 'system';
-  const next = { system: 'light', light: 'dark', dark: 'system' }[cur] || 'light';
-  const icon = { system: 'monitor', light: 'sun', dark: 'moon' }[cur];
-  return html`<button type="button" class="btn sm ghost" title=${'Theme: ' + cur + ' (click for ' + next + ')'} onClick=${() => { pref('theme', next); applyTheme(next); bump(); }}><${Icon} n=${icon} s=${14} />${cur === 'system' ? 'Auto' : cur === 'light' ? 'Light' : 'Dark'}</button>`;
-}
 
 function Rail({ counts }) {
   const data = currentData();
@@ -106,7 +100,6 @@ function Rail({ counts }) {
       ${hasTeam ? html`<label for="rail-me">You</label>
         <${MemberSelect} id="rail-me" cls="select sm" settings=${data.settings} value=${UI.me} noneLabel="Pick your name" onChange=${x => { pref('me', x || null); UI.set({ me: x }); }} />`
         : html`<button type="button" class="btn sm" onClick=${() => UI.go('settings')}><${Icon} n="users" s=${14} />Add your team</button>`}
-      <${ThemeToggle} />
       <${SyncStatus} />
     </div>
   </nav>`;
