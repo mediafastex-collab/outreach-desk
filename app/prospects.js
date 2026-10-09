@@ -119,7 +119,7 @@ function ProspectsView() {
     <div class="toolbar">
       <label class="search grow"><${Icon} n="search" s=${15} /><span class="sr">Search prospects</span>
         <input id="p-search" class="input" type="search" placeholder="Search name, company, headline, tag…" value=${f.q} onInput=${e => setF({ q: e.target.value })} /></label>
-      <${ClientSelect} id="p-client" cls="select sm" data=${data} value=${f.clientId} all=${true} includeInactive=${true} onChange=${v => setF({ clientId: v, senderId: '', listId: '' })} />
+      ${!UI.scope && html`<${ClientSelect} id="p-client" cls="select sm" data=${data} value=${f.clientId} all=${true} includeInactive=${true} onChange=${v => setF({ clientId: v, senderId: '', listId: '' })} />`}
       ${client && (client.senders || []).length > 1 && html`<select id="p-sender" class="select sm" value=${f.senderId} onChange=${e => setF({ senderId: e.target.value })}>
         <option value="" selected=${!f.senderId}>All accounts</option>
         ${client.senders.map(s => html`<option key=${s.id} value=${s.id} selected=${f.senderId === s.id}>${s.name}</option>`)}
@@ -404,7 +404,7 @@ function ProspectDrawer({ cid, pid }) {
   const sender = senderOf(client, p);
   const seq = data.seqs[p.sequenceId];
   const op = memberName(data.settings, operatorOf(client, sender));
-  const others = data.prospects.filter(x => x.urlKey === p.urlKey && x.clientId !== p.clientId);
+  const others = rawData().prospects.filter(x => x.urlKey === p.urlKey && x.clientId !== p.clientId);
   const log = (p.log || []).slice().reverse();
   const addNote = e => { e.preventDefault(); const t = noteText.trim(); if (!t) return; Act.note(p, t); setNoteText(''); };
   return html`<div>
@@ -444,7 +444,7 @@ function ProspectDrawer({ cid, pid }) {
         </div>
       </div>
       <div class="drawer-body">
-        ${others.length > 0 && html`<div class="note-box warn">Also a prospect for ${others.map(o => (data.clients[o.clientId] || {}).name).join(', ')}. Coordinate so they don't hear from two accounts.</div>`}
+        ${others.length > 0 && html`<div class="note-box warn">Also a prospect for ${others.map(o => (rawData().clients[o.clientId] || {}).name).join(', ')}. Coordinate so they don't hear from two accounts.</div>`}
         <section class="drawer-sec"><h3>Journey</h3><${Journey} p=${p} seq=${seq} /></section>
         <section class="drawer-sec"><h3>Next</h3><${NextCard} p=${p} data=${data} /></section>
         ${p.followUpOn && html`<section class="drawer-sec"><h3>Reminder</h3>
@@ -482,7 +482,7 @@ function AddProspectModal({ clientId }) {
   const client = data.clients[v.clientId];
   const norm = normalizeLinkedIn(v.url);
   const dup = norm ? findProspect(v.clientId, prospectDocId(norm.key)) : null;
-  const elsewhere = norm ? data.prospects.filter(x => x.urlKey === norm.key && x.clientId !== v.clientId) : [];
+  const elsewhere = norm ? rawData().prospects.filter(x => x.urlKey === norm.key && x.clientId !== v.clientId) : [];
   const set = k => e => setV(Object.assign({}, v, { [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }));
   const onUrlBlur = () => {
     const n = normalizeLinkedIn(v.url);
@@ -528,7 +528,7 @@ function AddProspectModal({ clientId }) {
         <input id="a-url" class="input" data-autofocus placeholder="https://www.linkedin.com/in/jane-doe" value=${v.url} onInput=${set('url')} onBlur=${onUrlBlur} />
         ${v.url && !norm && html`<span class="err">${checkLinkedIn(v.url).error}</span>`}
         ${dup && html`<span class="err">Already a prospect for this client (${(STATUSES[dup.status] || {}).label}).</span>`}
-        ${elsewhere.length > 0 && html`<span class="hint">Also a prospect for ${elsewhere.map(o => (data.clients[o.clientId] || {}).name).join(', ')}.</span>`}
+        ${elsewhere.length > 0 && html`<span class="hint">Also a prospect for ${elsewhere.map(o => (rawData().clients[o.clientId] || {}).name).join(', ')}.</span>`}
         ${norm && norm.kind === 'salesnav' && html`<span class="hint">Sales Navigator link: it opens in Sales Navigator for whoever has a seat.</span>`}
       </label>
       <div class="fields">
@@ -609,7 +609,7 @@ function buildImportRows(items, opts, data) {
     const lastRaw = String(r.lastInteraction || '').trim(), lastDate = parseLooseDate(lastRaw, TODAY);
     const extraNote = lastRaw && !lastDate ? 'From spreadsheet: ' + lastRaw : '';
     const tags = String(r.tags || '').split(/[,;|]/).map(t => t.trim()).filter(Boolean).concat(String(opts.tags || '').split(',').map(t => t.trim()).filter(Boolean));
-    const elsewhere = data.prospects.some(x => x.urlKey === norm.key && x.clientId !== opts.clientId);
+    const elsewhere = rawData().prospects.some(x => x.urlKey === norm.key && x.clientId !== opts.clientId);
     results.push({
       status: first ? 'new' : 'noname', line: it.line, elsewhere,
       fields: { norm, firstName: first, lastName: last, nameFromUrl, title: r.title || '', position: position || positionFromHeadline(r.title), company: opts.cleanCompany ? cleanCompany(company || companyFromHeadline(r.title)) : (company || companyFromHeadline(r.title) || ''), location: r.location || '', email: r.email || '',

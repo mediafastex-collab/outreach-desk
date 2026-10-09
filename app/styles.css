@@ -897,3 +897,26 @@ button.sync { border: 0; background: none; padding: 0; text-align: left; cursor:
 /* ---------- round 7: import history, relationship fields ---------- */
 .history-box { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; border-radius: var(--r); border: 1px solid var(--info); background: var(--info-soft); }
 .history-box .select { background: var(--surface); }
+
+/* ---------- workspace switcher ---------- */
+.ws-switch { display: flex; }
+.ws-switch .menu-anchor { display: flex; width: 100%; }
+.ws-btn { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; border: 1px solid var(--line-2); border-radius: var(--r); background: var(--surface); color: var(--ink); cursor: pointer; text-align: left; }
+.ws-btn:hover { border-color: var(--accent); }
+.ws-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--focus-ring); }
+.ws-btn > .ic:last-child { margin-left: auto; color: var(--ink-3); }
+.ws-dot { width: 22px; height: 22px; border-radius: 6px; flex: none; background: currentColor; display: grid; place-items: center; }
+.ws-dot.all { background: var(--sunken); color: var(--ink-2); }
+.ws-text { display: flex; flex-direction: column; min-width: 0; }
+.ws-k { font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-3); }
+.ws-name { font-weight: 600; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.scope-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 9px 12px; border-radius: var(--r); font-size: 13px; }
+.scope-bar p { flex: 1 1 260px; color: var(--ink); }
+.scope-bar .scope-dot { width: 10px; height: 10px; border-radius: 3px; background: currentColor; flex: none; }
+.scope-bar .btn { background: var(--surface); }
+@media (max-width: 900px) {
+  .ws-switch { flex: none; }
+  .ws-btn { padding: 4px 8px; }
+  .ws-k { display: none; }
+  .ws-name { max-width: 140px; }
+}

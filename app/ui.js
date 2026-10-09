@@ -20,6 +20,19 @@ const UI = {
   reportFilter: { clientId: '', period: '30d' },
   seqSelected: null,
   me: pref('me') || '',
+  scope: pref('scope') || '',
+  /* Workspace switcher: '' = all clients, or one client id. Every screen follows. */
+  setScope(id, quiet) {
+    const c = id || '';
+    this.scope = c;
+    pref('scope', c || null);
+    this.todayFilter = Object.assign({}, this.todayFilter, { clientId: c, listId: '' });
+    this.prospectFilter = Object.assign({}, this.prospectFilter, { clientId: c, listId: '', senderId: '', status: '' });
+    this.reportFilter = Object.assign({}, this.reportFilter, { clientId: c });
+    this.activityFilter = Object.assign({}, this.activityFilter, { clientId: c, listId: '' });
+    this.seqScope = ''; this.seqSelected = null; this.drawer = null;
+    if (!quiet) bump();
+  },
   set(patch) { Object.assign(this, patch); bump(); },
   go(view, patch) {
     Object.assign(this, patch || {}, { view });
@@ -230,7 +243,7 @@ function Menu({ label, icon, items, btnClass, title }) {
       ${list.map((it, i) => it.divider ? html`<hr key=${'d' + i} />`
         : it.header ? html`<div class="mh" key=${'h' + i}>${it.header}</div>`
         : html`<button key=${'b' + i} type="button" role="menuitem" class=${it.danger ? 'danger' : ''} disabled=${!!it.disabled}
-            onClick=${() => { setOpen(false); it.onSelect(); }}>${it.icon && html`<${Icon} n=${it.icon} />`}${it.label}</button>`)}
+            onClick=${() => { setOpen(false); it.onSelect(); }}>${it.dot != null && html`<span class=${'swatch-dot c' + (((it.dot | 0) % CLIENT_COLORS + CLIENT_COLORS) % CLIENT_COLORS)} style="background:currentColor;width:10px;height:10px;border-radius:3px;flex:none"></span>`}${it.icon && html`<${Icon} n=${it.icon} />`}<span style="flex:1">${it.label}</span>${it.meta && html`<span class="mono muted" style="font-size:11.5px">${it.meta}</span>`}${it.checked && html`<${Icon} n="check" s=${14} />`}</button>`)}
     </div>`}
   </span>`;
 }

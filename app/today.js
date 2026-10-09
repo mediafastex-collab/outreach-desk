@@ -378,7 +378,7 @@ function TodayView() {
     </div>
 
     <div class="toolbar">
-      <${ClientSelect} id="today-client" cls="select sm" data=${data} value=${f.clientId} all=${true} onChange=${v => setF({ clientId: v, listId: '' })} />
+      ${!UI.scope && html`<${ClientSelect} id="today-client" cls="select sm" data=${data} value=${f.clientId} all=${true} onChange=${v => setF({ clientId: v, listId: '' })} />`}
       ${f.clientId && listsOf(data, f.clientId).length > 0 && html`<${ListSelect} id="today-list" cls="select sm" data=${data} clientId=${f.clientId} value=${f.listId} allLabel="All lists" onChange=${v => setF({ listId: v })} />`}
       <${MemberSelect} id="today-member" cls="select sm" settings=${data.settings} value=${f.operatorId} all=${true} allLabel="All team members" onChange=${v => setF({ operatorId: v })} />
       ${tab === 'todo' && html`<div class="seg" role="group" aria-label="Task type">

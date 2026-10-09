@@ -46,7 +46,7 @@ function ActivityView() {
       <div class="seg" role="group" aria-label="Period">
         ${[['today', 'Today'], ['7d', '7 days'], ['30d', '30 days'], ['90d', '90 days'], ['all', 'All time']].map(([k, l]) => html`<button type="button" key=${k} aria-pressed=${f.period === k ? 'true' : 'false'} onClick=${() => setF({ period: k })}>${l}</button>`)}
       </div>
-      <${ClientSelect} id="act-client" cls="select sm" data=${data} value=${f.clientId} all=${true} includeInactive=${true} onChange=${v => setF({ clientId: v, listId: '' })} />
+      ${!UI.scope && html`<${ClientSelect} id="act-client" cls="select sm" data=${data} value=${f.clientId} all=${true} includeInactive=${true} onChange=${v => setF({ clientId: v, listId: '' })} />`}
       ${f.clientId && listsOf(data, f.clientId).length > 0 && html`<${ListSelect} id="act-list" cls="select sm" data=${data} clientId=${f.clientId} value=${f.listId} allLabel="All lists" onChange=${v => setF({ listId: v })} />`}
       ${(data.settings.team || []).length > 0 && html`<${MemberSelect} id="act-member" cls="select sm" settings=${data.settings} value=${f.memberId} all=${true} allLabel="Everyone" onChange=${v => setF({ memberId: v })} />`}
     </div>

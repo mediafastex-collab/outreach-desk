@@ -155,6 +155,7 @@ function ClientModal({ id }) {
     setBusy(false);
     if (!ok) return;
     UI.close();
+    if (!existing && UI.scope) UI.setScope(doc.id);
     UI.toast(existing ? 'Client saved.' : name + ' added. Next, add their prospects.', existing ? null : { undo: () => W.del('clients/' + doc.id) });
   };
   const over = s => (parseInt(s.dailyInvites, 10) || 0) > 30 || (parseInt(s.weeklyInvites, 10) || 0) > 150;
@@ -504,7 +505,7 @@ function SequencesView() {
 
 /* ---------- people master (account managers & team) ---------- */
 function PeopleEditor() {
-  const data = currentData();
+  const data = rawData();
   const s = data.settings;
   const [name, setName] = useState('');
   const [role, setRole] = useState('manager');
@@ -588,7 +589,7 @@ async function restoreBackup(text, fileName) {
 
 /* Preview and import a backup or a prepared import file. Never touches existing records unless asked. */
 function ImportFileModal({ obj, fileName }) {
-  const data = currentData();
+  const data = rawData();
   const [overwrite, setOverwrite] = useState(false);
   const [withSettings, setWithSettings] = useState(false);
   const [progress, setProgress] = useState(null);
@@ -654,7 +655,8 @@ function SettingsView() {
   useEffect(() => { setAgency(s.agencyName || ''); }, [s.agencyName]);
   const save = patch => W.guard() && W.saveSettings(patch).then(ok => ok && UI.toast('Settings saved.'));
   const toggleDay = d => { const set = new Set(s.workDays || []); if (set.has(d)) set.delete(d); else set.add(d); save({ workDays: Array.from(set).sort() }); };
-  const docCount = 1 + Object.keys(data.clients).length + Object.keys(data.seqs).length + data.prospects.length;
+  const all = rawData();
+  const docCount = 1 + Object.keys(all.clients).length + Object.keys(all.seqs).length + all.prospects.length;
   const onRestore = async e => { const f = e.target.files && e.target.files[0]; if (!f) return; restoreBackup(await readFileText(f), f.name); e.target.value = ''; };
   const storage = Store.mode === 'server' ? 'Saved in your shared Cloudflare workspace. Everyone who opens the desk with the team passcode sees the same data; changes from teammates appear within a few seconds.'
     : Store.mode === 'cloud' ? 'Saved in this page\'s shared storage. Everyone you share it with (with edit access) sees the same data, live.'
@@ -719,7 +721,7 @@ function SettingsView() {
           <div class="panel-pad stack">
             <p class="soft" style="font-size:13px">${storage}</p>
             <div class="btn-row">
-              <button type="button" class="btn" onClick=${() => saveFile('outreach-backup-' + TODAY + '.json', backupJSON(data))}><${Icon} n="download" s=${14} />Export backup (JSON)</button>
+              <button type="button" class="btn" onClick=${() => saveFile('outreach-backup-' + TODAY + '.json', backupJSON(rawData()))}><${Icon} n="download" s=${14} />Export backup (JSON)</button>
               <button type="button" class="btn" disabled=${!data.prospects.length} onClick=${() => saveFile('prospects-' + TODAY + '.csv', prospectsCSV(data.prospects.map(p => ({ p, next: nextAction(p, data, TODAY) })), data))}><${Icon} n="download" s=${14} />Export prospects (CSV)</button>
             </div>
             <label class="field"><span>Import a backup or prepared file <span class="hint">you see a preview before anything is saved</span></span>
@@ -754,7 +756,7 @@ function SettingsView() {
               body: 'This removes ' + plural(docCount, 'record') + ' for everyone who uses this workspace. It cannot be undone.',
               onConfirm: async () => {
                 if (!W.guard()) return;
-                const paths = data.prospects.map(prospectPath).concat(Object.keys(data.clients).map(id => 'clients/' + id), Object.keys(data.seqs).map(id => 'sequences/' + id), ['meta/settings']);
+                const paths = all.prospects.map(prospectPath).concat(Object.keys(all.clients).map(id => 'clients/' + id), Object.keys(all.seqs).map(id => 'sequences/' + id), ['meta/settings']);
                 const res = await W.many(paths, pth => W.del(pth, true));
                 UI.toast(res.failed ? res.failed + ' records could not be deleted.' : 'All data deleted.', res.failed ? { bad: true } : null);
               } })}><${Icon} n="trash" s=${14} />Delete all data</button>

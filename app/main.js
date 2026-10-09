@@ -95,6 +95,7 @@ function Rail({ counts }) {
       <span class="brand-mark"><${Icon} n="send" s=${16} /></span>
       <div><div class="brand-name">${data.settings.agencyName || 'Fastex'}</div><div class="brand-sub">Outreach desk</div></div>
     </div>
+    <${WorkspaceSwitcher} />
     <button type="button" class="find-btn" onClick=${() => UI.open('find', {})}><${Icon} n="search" s=${14} /><span>Find…</span><kbd>⌘K</kbd></button>
     <div class="nav">
       ${items.map(([k, label, icon, n]) => html`<button type="button" key=${k} class="nav-item" aria-current=${UI.view === k ? 'page' : undefined} onClick=${() => UI.go(k)}>
@@ -109,6 +110,34 @@ function Rail({ counts }) {
       <${SyncStatus} />
     </div>
   </nav>`;
+}
+
+/* Pick "All clients" or one client; every screen then shows only that client's data. */
+function WorkspaceSwitcher() {
+  const raw = rawData();
+  const due = useMemo(() => {
+    const m = {}; let total = 0;
+    if (!raw.ready) return { m, total };
+    const b = buildBoard(raw, { today: TODAY });
+    b.accounts.forEach(a => { m[a.client.id] = (m[a.client.id] || 0) + a.tasks.length; total += a.tasks.length; });
+    b.replies.forEach(r => { m[r.client.id] = (m[r.client.id] || 0) + 1; total++; });
+    return { m, total };
+  }, [raw, TODAY]);
+  const list = Object.values(raw.clients).filter(c => c.status !== 'archived').sort((a, b) => byText(a.name, b.name));
+  const cur = UI.scope && raw.clients[UI.scope];
+  const items = [
+    { header: 'Workspace' },
+    { label: 'All clients', icon: 'briefcase', checked: !cur, meta: due.total ? due.total + ' due' : '', onSelect: () => UI.setScope('') },
+    { divider: true },
+    ...list.map(c => ({ label: c.name, dot: c.colorIdx, checked: !!cur && cur.id === c.id, meta: due.m[c.id] ? due.m[c.id] + ' due' : '', onSelect: () => { UI.setScope(c.id); UI.toast('Switched to ' + c.name + '. You now see only their data.'); } })),
+    list.length === 0 ? { label: 'No clients yet', disabled: true, onSelect: () => {} } : null,
+    { divider: true },
+    { label: 'Manage clients', icon: 'sliders', onSelect: () => UI.go('clients') },
+  ];
+  const label = cur
+    ? html`<span class=${'ws-dot c' + (((cur.colorIdx | 0) % CLIENT_COLORS + CLIENT_COLORS) % CLIENT_COLORS)}></span><span class="ws-text"><span class="ws-k">Client workspace</span><span class="ws-name">${cur.name}</span></span>`
+    : html`<span class="ws-dot all"><${Icon} n="briefcase" s=${12} /></span><span class="ws-text"><span class="ws-k">Workspace</span><span class="ws-name">All clients</span></span>`;
+  return html`<div class="ws-switch"><${Menu} btnClass="ws-btn" label=${label} title="Switch workspace" items=${items} /></div>`;
 }
 
 function SyncStatus() {
@@ -169,6 +198,13 @@ async function startWorkspace() {
 function Banners() {
   const [hideLocal, setHideLocal] = useState(!!pref('hideLocalBanner'));
   const out = [];
+  const sc = UI.scope && rawData().clients[UI.scope];
+  if (sc) {
+    out.push(html`<div class=${'scope-bar c' + (((sc.colorIdx | 0) % CLIENT_COLORS + CLIENT_COLORS) % CLIENT_COLORS)} key="scope">
+      <span class="scope-dot"></span>
+      <p><strong>${sc.name}</strong> workspace · you're seeing only ${sc.name}'s prospects, tasks, sequences, activity and reports.</p>
+      <button type="button" class="btn sm" onClick=${() => UI.setScope('')}>Show all clients</button></div>`);
+  }
   if (Store.demoOn) {
     out.push(html`<div class="banner" key="demo"><${Icon} n="info" />
       <p><strong>You're looking at sample data.</strong> Three example clients, so you can see how the desk works. Nothing you do here is saved.</p>
@@ -218,6 +254,9 @@ function App() {
   }, []);
   const data = currentData();
   const loading = !Store.real || !Store.real.ready() || !Store.decided;
+  useEffect(() => {
+    if (!loading && UI.scope && Store.real && Store.real.ready() && !rawData().clients[UI.scope]) UI.setScope('');
+  }, [loading, data]);
   const board = useMemo(() => (loading ? null : buildBoard(data, { today: TODAY })), [data, TODAY, loading]);
   const counts = board ? board.counts : { open: 0 };
   let view;
@@ -248,6 +287,7 @@ function App() {
 (function start() {
   const initial = (location.hash || '').replace('#', '') || pref('view');
   if (VIEWS.indexOf(initial) !== -1) UI.view = initial;
+  if (UI.scope) UI.setScope(UI.scope, true);
   const root = document.getElementById('app');
   root.textContent = '';
   render(html`<${App} />`, root);

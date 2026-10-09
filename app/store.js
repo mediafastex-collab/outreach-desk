@@ -304,7 +304,8 @@ function pref(k, v) {
 }
 
 const EMPTY_DATA = { clients: {}, seqs: {}, prospects: [], settings: DEFAULT_SETTINGS, ready: false, allLoaded: false, ver: -1, kind: 'boot' };
-function currentData() {
+/* Everything in the workspace, regardless of the client switcher. Use for backups, imports and team changes. */
+function rawData() {
   const ds = Store.active();
   if (!ds) return EMPTY_DATA;
   if (ds._cacheVer === ds.ver && ds._cache) return ds._cache;
@@ -316,6 +317,26 @@ function currentData() {
   ds._cache = { clients: ds.clients, seqs: ds.sequences, prospects, settings, ready: ds.ready(), allLoaded: ds.allLoaded(), ver: ds.ver, kind: ds.backend.kind };
   ds._cacheVer = ds.ver;
   return ds._cache;
+}
+
+/* What the screens show: the whole workspace, or only the client picked in the workspace switcher. */
+function currentData() {
+  const raw = rawData();
+  const id = typeof UI !== 'undefined' ? UI.scope : '';
+  if (!id || !raw.clients[id]) return raw;
+  const ds = Store.active();
+  const sc = ds._scopeCache;
+  if (sc && sc.raw === raw && sc.id === id) return sc.data;
+  const client = raw.clients[id];
+  const prospects = raw.prospects.filter(p => p.clientId === id);
+  const used = new Set(prospects.map(p => p.sequenceId));
+  if (client.defaultSequenceId) used.add(client.defaultSequenceId);
+  (client.lists || []).forEach(l => { if (l.sequenceId) used.add(l.sequenceId); });
+  const seqs = {};
+  for (const k in raw.seqs) { const q = raw.seqs[k]; if (!q.clientId || q.clientId === id || used.has(k)) seqs[k] = q; }
+  const data = Object.assign({}, raw, { clients: { [id]: client }, seqs, prospects, scope: id });
+  ds._scopeCache = { raw, id, data };
+  return data;
 }
 
 function onDatasetChange(ds, err) {

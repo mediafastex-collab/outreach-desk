@@ -122,7 +122,7 @@ function ReportsView() {
       <div class="seg" role="group" aria-label="Period">
         ${[['7d', '7 days'], ['30d', '30 days'], ['90d', '90 days'], ['month', 'This month'], ['lastmonth', 'Last month'], ['all', 'All time']].map(([k, l]) => html`<button type="button" key=${k} aria-pressed=${f.period === k ? 'true' : 'false'} onClick=${() => setF({ period: k })}>${l}</button>`)}
       </div>
-      <${ClientSelect} id="r-client" cls="select sm" data=${data} value=${f.clientId} all=${true} includeInactive=${true} onChange=${v => setF({ clientId: v })} />
+      ${!UI.scope && html`<${ClientSelect} id="r-client" cls="select sm" data=${data} value=${f.clientId} all=${true} includeInactive=${true} onChange=${v => setF({ clientId: v })} />`}
     </div>
     <div class="kpis">
       ${kpi('Invites sent', a.k.invites, a.funnel.invited ? fmtPct(a.acceptRate) + ' accepted so far' : 'No invites in this period')}

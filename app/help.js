@@ -41,6 +41,7 @@ const GUIDES = {
     title: 'How to use Clients',
     steps: [
       { icon: 'plus', title: 'Add a client', body: 'Click "Add client", give it a name and choose its account manager.' },
+      { icon: 'briefcase', title: 'Switch workspace', body: 'The Workspace button at the top of the left menu switches between "All clients" and one client. Inside a client you see only their prospects, Today tasks, sequences, activity and reports. Your choice is remembered on this browser.' },
       { icon: 'userPlus', title: 'Add the LinkedIn accounts you send from', body: 'Each client has one or more LinkedIn accounts (for example the founder). Set invites per day and per week so the account stays safe. Extra invites automatically move to the next day.' },
       { icon: 'users', title: 'Account managers', body: '"Account managers" opens the team list. Add, rename or remove people and choose whether they manage clients, run LinkedIn accounts, or both.' },
       { icon: 'route', title: 'Sequences and lists per client', body: 'Each card shows the client\'s sequences and lists. "New" creates a sequence just for that client; "New list" groups their prospects.' },

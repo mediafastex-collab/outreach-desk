@@ -208,6 +208,10 @@ A client's spreadsheet ("Relationship Tracker": Name, Profile URL, Company, Role
 - **Needs details** filter: names read from the URL, or no company and no position.
 - **Prepared-file import with preview:** a backup or generated import shows counts and status breakdown first, skips records that already exist unless told to replace, and uploads in batches.
 
+## Additions (round 8)
+
+- **Client workspace switcher.** A Workspace control at the top of the sidebar switches between "All clients" and a single client (with each client's due count). Inside a client, every screen shows only that client's data: Today, Prospects, Activity, Clients, Sequences (shared templates plus the client's own and any it uses), Reports and Find. A colored strip names the active client with a "Show all clients" button; per-screen client filters are hidden; the choice is remembered per browser and falls back to All if the client is gone. Backups, imports, duplicate warnings across clients and team changes always use the full workspace.
+
 ## Deliverables
 
 The working app, a short daily routine inside the app, and a list of assumptions made.
