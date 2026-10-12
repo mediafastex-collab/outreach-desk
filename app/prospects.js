@@ -38,13 +38,16 @@ function ProspectsView() {
   const [sel, setSel] = useState(() => new Set());
   const q = f.q.trim().toLowerCase();
   const client = f.clientId ? data.clients[f.clientId] : null;
+  const af = UI.addedFilter;
+  const added = addedRange(af, TODAY);
   const scoped = useMemo(() => data.prospects.filter(p =>
+    (!added || inPeriod(addedOnOf(p), added)) &&
     (!f.clientId || p.clientId === f.clientId) && (!f.senderId || p.senderId === f.senderId) &&
     (!f.sequenceId || p.sequenceId === f.sequenceId) && (!f.tag || (p.tags || []).indexOf(f.tag) !== -1) &&
     (!f.potential || (f.potential === '_none' ? !p.potential : p.potential === f.potential)) &&
     (!f.country || (p.country || '') === f.country) && (!f.needs || needsDetails(p)) &&
     (!f.clientId || !f.listId || (f.listId === '_none' ? !p.listId : p.listId === f.listId)) &&
-    (!q || haystack(p).indexOf(q) !== -1)), [data, f.clientId, f.senderId, f.sequenceId, f.tag, f.listId, f.potential, f.country, f.needs, q]);
+    (!q || haystack(p).indexOf(q) !== -1)), [data, f.clientId, f.senderId, f.sequenceId, f.tag, f.listId, f.potential, f.country, f.needs, q, af.period, af.from, af.to, TODAY]);
   const lists = client ? listsOf(data, client.id) : [];
   const listCounts = useMemo(() => {
     const m = { _all: 0, _none: 0 };
@@ -60,7 +63,7 @@ function ProspectsView() {
     if (f.sort === 'name') out.sort((a, b) => byText(nm(a), nm(b)));
     else if (f.sort === 'potential') out.sort((a, b) => ((POTENTIALS[a.p.potential] || { rank: 9 }).rank - (POTENTIALS[b.p.potential] || { rank: 9 }).rank) || byText(nm(a), nm(b)));
     else if (f.sort === 'quiet') out.sort((a, b) => String(lastTouchOn(a.p) || '').localeCompare(String(lastTouchOn(b.p) || '')));
-    else if (f.sort === 'added') out.sort((a, b) => (b.p.createdAt || '').localeCompare(a.p.createdAt || ''));
+    else if (f.sort === 'added') out.sort((a, b) => String(addedOnOf(b.p) || '').localeCompare(String(addedOnOf(a.p) || '')) || (b.p.createdAt || '').localeCompare(a.p.createdAt || ''));
     else if (f.sort === 'activity') out.sort((a, b) => (lastTs(b.p)).localeCompare(lastTs(a.p)));
     else out.sort((a, b) => {
       const da = a.next ? a.next.due : '9999', db = b.next ? b.next.due : '9999';
@@ -106,7 +109,8 @@ function ProspectsView() {
       <div>
         <p class="eyebrow">${client ? client.name : 'All clients'}</p>
         <h1>Prospects</h1>
-        <p class="lede">${fmtNum(scoped.length)} ${q || f.clientId || f.senderId || f.sequenceId || f.tag ? 'matching' : 'in total'} · ${fmtNum(counts.active + counts.invited + counts.queued)} in progress · ${fmtNum(counts.meeting)} meetings booked</p>
+        <p class="lede">${fmtNum(scoped.length)} ${q || f.clientId || f.senderId || f.sequenceId || f.tag || added ? 'matching' : 'in total'} · ${fmtNum(counts.active + counts.invited + counts.queued)} in progress · ${fmtNum(counts.meeting)} meetings booked</p>
+        ${added && html`<p class="filter-note"><${Icon} n="calendar" s=${13} />Only people added ${addedText(af, added)}. <button type="button" class="linkish" onClick=${() => { UI.set({ addedFilter: { period: 'all', from: '', to: '' } }); setLimit(100); }}>Show everyone</button></p>`}
       </div>
       <div class="head-actions">
         <${HelpButton} view="prospects" />
@@ -124,6 +128,7 @@ function ProspectsView() {
         <option value="" selected=${!f.senderId}>All accounts</option>
         ${client.senders.map(s => html`<option key=${s.id} value=${s.id} selected=${f.senderId === s.id}>${s.name}</option>`)}
       </select>`}
+      <${PeriodFilter} id="p-added" prefix="Added" allLabel="Any time" value=${af} onChange=${v => { UI.set({ addedFilter: v }); setLimit(100); }} title="Only people added to the desk in this period (for imports: the date in the sheet)" />
       <${SequenceSelect} id="p-seq" cls="select sm" data=${data} value=${f.sequenceId} allowEmpty="All sequences" onChange=${v => setF({ sequenceId: v })} />
       ${tags.length > 0 && html`<select id="p-tag" class="select sm" value=${f.tag} onChange=${e => setF({ tag: e.target.value })}>
         <option value="" selected=${!f.tag}>All tags</option>${tags.map(t => html`<option key=${t} value=${t} selected=${f.tag === t}>${t}</option>`)}</select>`}
@@ -137,7 +142,7 @@ function ProspectsView() {
       ${needsCount > 0 && html`<button type="button" class=${'btn sm' + (f.needs ? ' primary' : '')} aria-pressed=${f.needs ? 'true' : 'false'} title="Name read from the LinkedIn URL, or no company and no position yet" onClick=${() => setF({ needs: !f.needs })}><${Icon} n="edit" s=${13} />Needs details · ${needsCount}</button>`}
       <select id="p-sort" class="select sm" value=${f.sort} onChange=${e => setF({ sort: e.target.value })} aria-label="Sort">
         <option value="next" selected=${f.sort === 'next'}>Sort: next due</option>
-        <option value="added" selected=${f.sort === 'added'}>Sort: newest</option>
+        <option value="added" selected=${f.sort === 'added'}>Sort: newest added</option>
         <option value="activity" selected=${f.sort === 'activity'}>Sort: recent activity</option>
         <option value="name" selected=${f.sort === 'name'}>Sort: name</option>
         <option value="potential" selected=${f.sort === 'potential'}>Sort: potential</option>
@@ -182,7 +187,7 @@ function ProspectsView() {
             <input type="checkbox" aria-label=${'Select ' + fullName(p)} checked=${isSel} onChange=${() => toggle(p)} />
             <div class="who"><button type="button" onClick=${() => UI.openProspect(p)}>${fullName(p)}</button>${p.potential && html` <${PotentialPill} v=${p.potential} />`}${p.nameFromUrl && html` <span class="pill tone-today" title="Name was read from the LinkedIn URL. Check it before messaging.">check name</span>`}
               <div class="sub">${roleLine(p) || p.url}</div></div>
-            <div class="cl"><${ClientChip} client=${c} /><span class="sub">${s ? s.name : 'No account'}${p.listId && listName(data, p.clientId, p.listId) ? ' · ' + listName(data, p.clientId, p.listId) : ''}</span></div>
+            <div class="cl"><${ClientChip} client=${c} /><span class="sub">${s ? s.name : 'No account'}${p.listId && listName(data, p.clientId, p.listId) ? ' · ' + listName(data, p.clientId, p.listId) : ''}${addedOnOf(p) ? ' · added ' + fmtShort(addedOnOf(p)) : ''}</span></div>
             <div><${StatusPill} status=${p.status} /></div>
             <div><${StepDots} p=${p} seq=${data.seqs[p.sequenceId]} /></div>
             <div class="nx">${next ? html`<div class="t">${next.text}</div>${next.sub && html`<span class=${'pill tone-' + next.tone}>${next.sub}</span>`}` : html`<span class="muted">–</span>`}</div>

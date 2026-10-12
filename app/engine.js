@@ -938,6 +938,7 @@ function buildBoard(data, opts) {
     if (opts.listId && (p.listId || '') !== (opts.listId === '_none' ? '' : opts.listId)) continue;
     const sender = senderOf(client, p);
     if (opts.operatorId && operatorOf(client, sender) !== opts.operatorId) continue;
+    if (opts.added && !inPeriod(addedOnOf(p), opts.added)) continue;
     for (const e of p.log || []) if (e.on === t && DONE_KINDS[e.kind]) doneToday++;
     if (client.status && client.status !== 'active') { hiddenClients.add(client.id); continue; }
     for (const task of prospectTasks(p, ctx)) {
@@ -1030,10 +1031,14 @@ function projectTimeline(p, seq, settings, t) {
 }
 
 /* ---------- analytics ---------- */
-function periodRange(key, t) {
+/* Date filters used on every screen. */
+const PERIOD_OPTIONS = [['all', 'All time'], ['today', 'Today'], ['7d', 'Last 7 days'], ['15d', 'Last 15 days'], ['month', 'This month'], ['lastmonth', 'Last month'], ['custom', 'Custom dates…']];
+function periodRange(key, t, custom) {
   const d = dateOf(t);
   switch (key) {
+    case 'today': return { from: t, to: t, label: 'Today' };
     case '7d': return { from: addDays(t, -6), to: t, label: 'Last 7 days' };
+    case '15d': return { from: addDays(t, -14), to: t, label: 'Last 15 days' };
     case '30d': return { from: addDays(t, -29), to: t, label: 'Last 30 days' };
     case '90d': return { from: addDays(t, -89), to: t, label: 'Last 90 days' };
     case 'month': return { from: isoOf(new Date(d.getFullYear(), d.getMonth(), 1, 12)), to: t, label: MONTHS_LONG[d.getMonth()] + ' to date' };
@@ -1042,9 +1047,20 @@ function periodRange(key, t) {
       const e = new Date(d.getFullYear(), d.getMonth(), 0, 12);
       return { from: isoOf(s), to: isoOf(e), label: MONTHS_LONG[s.getMonth()] + ' ' + s.getFullYear() };
     }
+    case 'custom': {
+      let a = custom && isISODate(custom.from) ? custom.from : null;
+      let b = custom && isISODate(custom.to) ? custom.to : t;
+      if (a && a > b) { const x = a; a = b; b = x; }
+      return { from: a, to: b, label: !a ? 'Up to ' + fmtShort(b) : a === b ? fmtShort(a) : fmtShort(a) + ' – ' + fmtShort(b) };
+    }
     default: return { from: null, to: t, label: 'All time' };
   }
 }
+/* The day a prospect was added to the desk (for imports: the date in the sheet). */
+function addedOnOf(p) { return p.addedOn || (p.createdAt ? String(p.createdAt).slice(0, 10) : null); }
+/* null means "no date filter". */
+function addedRange(f, t) { return !f || !f.period || f.period === 'all' ? null : periodRange(f.period, t, f); }
+function inPeriod(on, r) { return !r || (!!on && (!r.from || on >= r.from) && (!r.to || on <= r.to)); }
 function analyze(prospects, range) {
   const from = range.from, to = range.to;
   const inR = on => on && (!from || on >= from) && (!to || on <= to);

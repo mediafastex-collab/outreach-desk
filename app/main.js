@@ -10,6 +10,7 @@ const MODALS = {
   client: p => html`<${ClientModal} id=${p.id} />`,
   confirm: p => html`<${ConfirmModal} ...${p} />`,
   date: p => html`<${DateModal} ...${p} />`,
+  range: p => html`<${RangeModal} ...${p} />`,
   text: p => html`<${TextModal} ...${p} />`,
   accept: p => html`<${AcceptanceModal} accountKey=${p.key} />`,
   run: p => html`<${RunModal} accountKey=${p.key} />`,

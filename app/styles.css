@@ -149,6 +149,11 @@ h2.sec .count { font-family: var(--font-mono); font-size: 12px; font-weight: 400
 .btn:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--focus-ring); }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .btn.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+.btn.filter-on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-text); }
+.btn.filter-on:hover { background: var(--accent-soft); border-color: var(--accent-hover); }
+.period-filter { display: inline-flex; }
+.filter-note { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 6px; font-size: 13px; color: var(--accent-text); }
+.filter-note .linkish { font-size: 13px; }
 .btn.ghost { background: transparent; border-color: transparent; color: var(--ink-2); }
 .btn.ghost:hover { background: var(--sunken); color: var(--ink); }
 .btn.danger { color: var(--overdue); }

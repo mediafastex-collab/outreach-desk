@@ -308,11 +308,14 @@ function UpcomingDay({ day }) {
 }
 
 function DoneTab({ data, f }) {
+  const af = UI.addedFilter;
   const rows = useMemo(() => {
+    const added = addedRange(af, TODAY);
     const out = [];
     for (const p of data.prospects) {
       const c = data.clients[p.clientId];
       if (!c) continue;
+      if (added && !inPeriod(addedOnOf(p), added)) continue;
       if (f.clientId && p.clientId !== f.clientId) continue;
       if (f.clientId && f.listId && (f.listId === '_none' ? p.listId : p.listId !== f.listId)) continue;
       const sender = senderOf(c, p);
@@ -320,7 +323,7 @@ function DoneTab({ data, f }) {
       for (const e of p.log || []) if (e.on === TODAY && e.kind !== 'added') out.push({ e, p, c, sender });
     }
     return out.sort((a, b) => ((a.e.ts || '') < (b.e.ts || '') ? 1 : -1));
-  }, [data, TODAY, f.clientId, f.listId, f.operatorId]);
+  }, [data, TODAY, f.clientId, f.listId, f.operatorId, af.period, af.from, af.to]);
   if (!rows.length) return html`<div class="panel"><${Empty} icon="check" title="Nothing logged yet today">Everything you mark as sent, accepted or replied shows up here with the time.</${Empty}></div>`;
   return html`<section class="panel">
     <div class="panel-head"><h3>Done today</h3><span class="mono muted">${rows.length}</span></div>
@@ -345,7 +348,9 @@ function TodayView() {
   const [replyLimit, setReplyLimit] = useState(30);
   const f = UI.todayFilter;
   const tab = f.tab || 'todo';
-  const board = useMemo(() => buildBoard(data, { today: TODAY, clientId: f.clientId, operatorId: f.operatorId, listId: f.clientId ? f.listId : '' }), [data, TODAY, f.clientId, f.operatorId, f.listId]);
+  const af = UI.addedFilter;
+  const added = addedRange(af, TODAY);
+  const board = useMemo(() => buildBoard(data, { today: TODAY, clientId: f.clientId, operatorId: f.operatorId, listId: f.clientId ? f.listId : '', added }), [data, TODAY, f.clientId, f.operatorId, f.listId, af.period, af.from, af.to]);
   const setF = patch => UI.set({ todayFilter: Object.assign({}, f, patch) });
   const c = board.counts;
   const g = f.group || 'all';
@@ -368,6 +373,7 @@ function TodayView() {
         <p class="eyebrow">${fmtLong(TODAY)}</p>
         <h1>Today</h1>
         <p class="lede">${todo === 0 ? 'Nothing left to do right now.' : plural(todo, 'thing') + ' to do' + (c.overdue ? ', ' + c.overdue + ' overdue' : '')}${c.pending ? ' · ' + plural(c.pending, 'invite') + ' waiting for acceptance' : ''}.</p>
+        ${added && html`<p class="filter-note"><${Icon} n="calendar" s=${13} />Only people added ${addedText(af, added)}. <button type="button" class="linkish" onClick=${() => UI.set({ addedFilter: { period: 'all', from: '', to: '' } })}>Show everyone</button></p>`}
       </div>
       <div class="head-actions">
         <${HelpButton} view="today" />
@@ -401,6 +407,7 @@ function TodayView() {
       ${!UI.scope && html`<${ClientSelect} id="today-client" cls="select sm" data=${data} value=${f.clientId} all=${true} onChange=${v => setF({ clientId: v, listId: '' })} />`}
       ${f.clientId && listsOf(data, f.clientId).length > 0 && html`<${ListSelect} id="today-list" cls="select sm" data=${data} clientId=${f.clientId} value=${f.listId} allLabel="All lists" onChange=${v => setF({ listId: v })} />`}
       <${MemberSelect} id="today-member" cls="select sm" settings=${data.settings} value=${f.operatorId} all=${true} allLabel="All team members" onChange=${v => setF({ operatorId: v })} />
+      <${PeriodFilter} id="today-added" prefix="Added" allLabel="Any time" value=${af} onChange=${v => UI.set({ addedFilter: v })} title="Only people added to the desk in this period (for imports: the date in the sheet)" />
       ${tab === 'todo' && html`<div class="seg" role="group" aria-label="Task type">
         ${types.map(([k, l]) => html`<button type="button" key=${k} aria-pressed=${g === k ? 'true' : 'false'} onClick=${() => setF({ group: k })}>${l}</button>`)}
       </div>`}
@@ -440,7 +447,9 @@ function TodayView() {
 /* ---------- acceptance check ---------- */
 function AcceptanceModal({ accountKey }) {
   const data = currentData();
-  const board = useMemo(() => buildBoard(data, { today: TODAY }), [data, TODAY]);
+  const af = UI.addedFilter;
+  const added = addedRange(af, TODAY);
+  const board = useMemo(() => buildBoard(data, { today: TODAY, added }), [data, TODAY, af.period, af.from, af.to]);
   const a = board.accounts.find(x => x.key === accountKey);
   const [sel, setSel] = useState(() => new Set());
   const [when, setWhen] = useState(TODAY);
@@ -465,7 +474,7 @@ function AcceptanceModal({ accountKey }) {
   };
   const presets = [{ label: 'Today', value: TODAY }, { label: 'Yesterday', value: addDays(TODAY, -1) }, { label: '2 days ago', value: addDays(TODAY, -2) }];
   return html`<${Modal} title="Check acceptances" size="wide"
-    sub=${a ? (a.sender ? a.sender.name : 'No account') + ' · ' + a.client.name + ' · ' + plural(list.length, 'invite') + ' waiting' : 'Nothing pending'}
+    sub=${a ? (a.sender ? a.sender.name : 'No account') + ' · ' + a.client.name + ' · ' + plural(list.length, 'invite') + ' waiting' + (added ? ' · added ' + addedText(af, added) : '') : 'Nothing pending'}
     foot=${html`
       <label class="check left"><input id="acc-remind" type="checkbox" checked=${remind} onChange=${e => setRemind(e.target.checked)} />Remind me to re-invite withdrawn people in 3 weeks</label>
       <button type="button" class="btn" disabled=${!chosen.length || busy} onClick=${withdraw}><${Icon} n="logout" s=${14} />Withdraw ${chosen.length || ''}</button>
@@ -541,7 +550,9 @@ function ProfileStrip({ p, missing }) {
 
 function RunModal({ accountKey }) {
   const data = currentData();
-  const board = useMemo(() => buildBoard(data, { today: TODAY, clientId: accountKey ? '' : UI.todayFilter.clientId, operatorId: accountKey ? '' : UI.todayFilter.operatorId }), [data, TODAY]);
+  const af = UI.addedFilter;
+  const added = addedRange(af, TODAY);
+  const board = useMemo(() => buildBoard(data, { today: TODAY, clientId: accountKey ? '' : UI.todayFilter.clientId, operatorId: accountKey ? '' : UI.todayFilter.operatorId, added }), [data, TODAY, af.period, af.from, af.to]);
   const [skipped, setSkipped] = useState(() => new Set());
   const [doneKeys, setDoneKeys] = useState(() => new Set());
   const [count, setCount] = useState(0);
@@ -562,14 +573,14 @@ function RunModal({ accountKey }) {
   };
   const skip = () => { if (task) setSkipped(s => new Set(s).add(task.key)); };
   if (!task) {
-    return html`<${Modal} title=${title} size="narrow" foot=${html`<button type="button" class="btn primary" onClick=${() => UI.close()}>Close</button>`}>
+    return html`<${Modal} title=${title} sub=${added ? 'People added ' + addedText(af, added) : undefined} size="narrow" foot=${html`<button type="button" class="btn primary" onClick=${() => UI.close()}>Close</button>`}>
       <${Empty} icon="check" title=${count ? 'Run complete' : 'Nothing due here'}>${count ? plural(count, 'task') + ' done in this run.' + (skipped.size ? ' ' + skipped.size + ' skipped for now.' : '') : 'No tasks are due for this selection.'}</${Empty}>
     <//>`;
   }
   const p = task.p;
   const isStep = task.kind === 'step';
   const wait = isStep ? cooldownLeft(acctKeyOf(p)) : 0;
-  return html`<${Modal} title=${title} size="wide" foot=${html`
+  return html`<${Modal} title=${title} sub=${added ? 'Only people added ' + addedText(af, added) : undefined} size="wide" foot=${html`
       <span class="left run-progress">${count} done · ${queue.length} to go</span>
       <button type="button" class="btn" disabled=${busy} onClick=${() => UI.open('reply', { p: fresh(p), back: { type: 'run', props: { key: accountKey } } })}><${Icon} n="reply" s=${14} />They replied</button>
       ${isStep && html`<button type="button" class="btn" disabled=${busy} onClick=${act(() => Act.snooze(fresh(p), addDays(TODAY, 1)))}><${Icon} n="clock" s=${14} />Tomorrow</button>`}

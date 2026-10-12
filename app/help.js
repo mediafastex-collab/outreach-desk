@@ -13,6 +13,7 @@ const GUIDES = {
       { icon: 'calendar', title: 'See what is coming and what is done', body: '"Upcoming" shows the next 14 days, day by day. "Done today" lists everything logged today with the time and who did it.', tip: 'Logged something by mistake? Use Undo on the pop-up, or open the prospect to fix it.' },
       { icon: 'clock', title: 'Built-in pause between sends', body: 'After you mark an invite or message as sent, that LinkedIn account waits a random 5 to 20 seconds before its next send. The buttons show a countdown. Change the range in Settings.' },
       { icon: 'zap', title: 'Focus run', body: 'Click "Focus run" on an account to go through its tasks one at a time: copy, open, send, next. The person\'s position, company and headline are shown at the top; click "Add details" to fill them, or paste them from LinkedIn.' },
+      { icon: 'calendar', title: 'Work by date added', body: 'Use the "Added" filter to see only people added Today, in the last 7 or 15 days, this month, last month, or between custom dates. Focus run and the Prospects page follow the same filter, so you can clear the newest people first.', tip: 'For imported sheets, "added" is the date in the sheet. "Show everyone" under the title clears it.' },
     ],
   },
   prospects: {
@@ -24,7 +25,7 @@ const GUIDES = {
       { icon: 'thumbsUp', title: 'Log engagement', body: 'Liked or commented on your post, viewed your profile, a call, a WhatsApp: use "Log engagement" in a person\'s ••• menu. It goes into their history without moving their sequence.' },
       { icon: 'upload', title: 'Import a spreadsheet with its history', body: 'Add in bulk → Import CSV reads columns like Connection date, Last interaction, Status, Potential and Country. You choose what each date means, see how many people land in each status, then import. Job titles in the Company column are moved to Position for you.' },
       { icon: 'list', title: 'Organise with lists', body: 'Pick a client in the filter to see its lists (for example "Heads of Data" or "Webinar attendees"). "Create a list" or "Manage lists" adds more.' },
-      { icon: 'search', title: 'Find anyone fast', body: 'Search by name, company, headline or tag, and use the status chips to see who is waiting, in sequence, replied and so on.', tip: 'Press Ctrl+K (Cmd+K on a Mac) anywhere to jump to a person.' },
+      { icon: 'search', title: 'Find anyone fast', body: 'Search by name, company, headline or tag, and use the status chips to see who is waiting, in sequence, replied and so on. The "Added" filter narrows the list to people added in a period; Today uses the same choice.', tip: 'Press Ctrl+K (Cmd+K on a Mac) anywhere to jump to a person.' },
       { icon: 'user', title: 'Open a person', body: 'Click a name to see their journey (Invite → Accepted → Message 1 → …), the next message, reminders and the full history with times. The buttons there do the same as on Today.' },
       { icon: 'checkSquare', title: 'Change many at once', body: 'Tick the boxes on the left, then use Actions to mark steps done, mark accepted, add to a list, move to another sequence or set an outcome.' },
     ],

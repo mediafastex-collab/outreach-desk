@@ -7,7 +7,7 @@ function ActivityView() {
   const f = UI.activityFilter;
   const setF = patch => { UI.set({ activityFilter: Object.assign({}, f, patch) }); setLimit(150); };
   const [limit, setLimit] = useState(150);
-  const range = f.period === 'today' ? { from: TODAY, to: TODAY } : periodRange(f.period, TODAY);
+  const range = periodRange(f.period, TODAY, f);
   const inR = on => (!range.from || on >= range.from) && on <= (range.to || TODAY);
   const entries = useMemo(() => {
     const out = [];
@@ -22,7 +22,7 @@ function ActivityView() {
     }
     out.sort((a, b) => (a.ts < b.ts ? 1 : a.ts > b.ts ? -1 : 0));
     return out;
-  }, [data, f.clientId, f.listId, f.memberId, f.period, TODAY]);
+  }, [data, f.clientId, f.listId, f.memberId, f.period, f.from, f.to, TODAY]);
   const byKind = {};
   entries.forEach(x => { byKind[x.kind] = (byKind[x.kind] || 0) + 1; });
   const shown = f.kind ? entries.filter(x => x.kind === f.kind) : entries;
@@ -43,9 +43,7 @@ function ActivityView() {
       <div class="head-actions"><${HelpButton} view="activity" /><button type="button" class="btn" disabled=${!shown.length} onClick=${exportCSV}><${Icon} n="download" s=${14} />Export CSV</button></div>
     </header>
     <div class="toolbar">
-      <div class="seg" role="group" aria-label="Period">
-        ${[['today', 'Today'], ['7d', '7 days'], ['30d', '30 days'], ['90d', '90 days'], ['all', 'All time']].map(([k, l]) => html`<button type="button" key=${k} aria-pressed=${f.period === k ? 'true' : 'false'} onClick=${() => setF({ period: k })}>${l}</button>`)}
-      </div>
+      <${PeriodFilter} id="act-period" value=${f} onChange=${v => setF(v)} title="When the activity happened" />
       ${!UI.scope && html`<${ClientSelect} id="act-client" cls="select sm" data=${data} value=${f.clientId} all=${true} includeInactive=${true} onChange=${v => setF({ clientId: v, listId: '' })} />`}
       ${f.clientId && listsOf(data, f.clientId).length > 0 && html`<${ListSelect} id="act-list" cls="select sm" data=${data} clientId=${f.clientId} value=${f.listId} allLabel="All lists" onChange=${v => setF({ listId: v })} />`}
       ${(data.settings.team || []).length > 0 && html`<${MemberSelect} id="act-member" cls="select sm" settings=${data.settings} value=${f.memberId} all=${true} allLabel="Everyone" onChange=${v => setF({ memberId: v })} />`}

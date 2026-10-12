@@ -94,9 +94,9 @@ function ReportsView() {
   const data = currentData();
   const f = UI.reportFilter;
   const setF = patch => UI.set({ reportFilter: Object.assign({}, f, patch) });
-  const range = periodRange(f.period, TODAY);
+  const range = periodRange(f.period, TODAY, f);
   const ps = useMemo(() => data.prospects.filter(p => !f.clientId || p.clientId === f.clientId), [data, f.clientId]);
-  const a = useMemo(() => analyze(ps, range), [ps, f.period, TODAY]);
+  const a = useMemo(() => analyze(ps, range), [ps, f.period, f.from, f.to, TODAY]);
   const series = useMemo(() => dailySeries(a, range, TODAY), [a]);
   const sc = useMemo(() => statusCounts(ps), [ps]);
   const client = f.clientId ? data.clients[f.clientId] : null;
@@ -106,7 +106,7 @@ function ReportsView() {
       const cps = data.prospects.filter(p => p.clientId === c.id);
       return { c, a: analyze(cps, range), sc: statusCounts(cps) };
     }).sort((x, y) => byText(x.c.name, y.c.name));
-  }, [data, f.clientId, f.period, TODAY]);
+  }, [data, f.clientId, f.period, f.from, f.to, TODAY]);
   const replyRows = Object.entries(a.replyAfter).sort((x, y) => y[1] - x[1]);
   const funnel = [['Invites sent', a.funnel.invited], ['Accepted', a.funnel.accepted], ['Replied', a.funnel.replied], ['Positive', a.funnel.positive], ['Meeting booked', a.funnel.meeting]];
   const members = Object.entries(a.members).map(([id, m]) => ({ id, name: id === '_' ? 'Not signed' : memberName(data.settings, id) || 'Former teammate', m })).sort((x, y) => (y.m.invites + y.m.messages) - (x.m.invites + x.m.messages));
@@ -114,14 +114,12 @@ function ReportsView() {
   const title = client ? client.name : (data.settings.agencyName || 'All clients');
   return html`<div class="page">
     <header class="page-head">
-      <div><p class="eyebrow">${range.label}${range.from ? ' · ' + fmtShort(range.from) + ' to ' + fmtShort(range.to) : ''}</p><h1>Reports</h1>
+      <div><p class="eyebrow">${range.label}${range.from && f.period !== 'custom' && f.period !== 'today' ? ' · ' + fmtShort(range.from) + ' to ' + fmtShort(range.to) : ''}</p><h1>Reports</h1>
         <p class="lede">What happened in the period, per client.</p></div>
       <div class="head-actions"><${HelpButton} view="reports" /><button type="button" class="btn" onClick=${() => copyText(reportText(title, range, a, sc), 'Report')}><${Icon} n="copy" s=${14} />Copy ${client ? 'client' : ''} report</button></div>
     </header>
     <div class="toolbar">
-      <div class="seg" role="group" aria-label="Period">
-        ${[['7d', '7 days'], ['30d', '30 days'], ['90d', '90 days'], ['month', 'This month'], ['lastmonth', 'Last month'], ['all', 'All time']].map(([k, l]) => html`<button type="button" key=${k} aria-pressed=${f.period === k ? 'true' : 'false'} onClick=${() => setF({ period: k })}>${l}</button>`)}
-      </div>
+      <${PeriodFilter} id="r-period" value=${f} onChange=${v => setF(v)} title="Period the report covers" />
       ${!UI.scope && html`<${ClientSelect} id="r-client" cls="select sm" data=${data} value=${f.clientId} all=${true} includeInactive=${true} onChange=${v => setF({ clientId: v })} />`}
     </div>
     <div class="kpis">

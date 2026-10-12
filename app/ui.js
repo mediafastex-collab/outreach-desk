@@ -15,9 +15,11 @@ const UI = {
   toasts: [],
   todayFilter: { clientId: '', operatorId: '', group: 'all', listId: '' },
   prospectFilter: { q: '', clientId: '', senderId: '', status: '', sequenceId: '', tag: '', sort: 'next', listId: '', potential: '', country: '', needs: false },
-  activityFilter: { period: '7d', clientId: '', listId: '', memberId: '', kind: '' },
+  activityFilter: { period: '7d', from: '', to: '', clientId: '', listId: '', memberId: '', kind: '' },
   seqScope: '',
-  reportFilter: { clientId: '', period: '30d' },
+  reportFilter: { clientId: '', period: 'month', from: '', to: '' },
+  /* Shared by Today, Focus run and Prospects: only people added in this period. */
+  addedFilter: { period: 'all', from: '', to: '' },
   seqSelected: null,
   me: pref('me') || '',
   scope: pref('scope') || '',
@@ -282,6 +284,52 @@ function ConfirmModal({ title, body, confirmLabel, danger, typed, onConfirm }) {
       <button type="button" class=${'btn ' + (danger ? 'danger solid' : 'primary')} disabled=${!ok || busy} onClick=${go}>${busy ? 'Working…' : confirmLabel || 'Confirm'}</button>`}>
     <p class="soft">${body}</p>
     ${typed && html`<label class="field"><span>Type ${typed} to confirm</span><input id="confirm-typed" class="input" data-autofocus value=${val} onInput=${e => setVal(e.target.value)} /></label>`}
+  <//>`;
+}
+
+/* Date filter dropdown: Today, Last 7 / 15 days, This month, Last month, Custom dates, All time. */
+function PeriodFilter({ id, value, onChange, prefix, allLabel, title }) {
+  const v = value || { period: 'all' };
+  const r = periodRange(v.period, TODAY, v);
+  const name = k => (k === 'all' && allLabel) || (PERIOD_OPTIONS.find(o => o[0] === k) || [k, k])[1];
+  const cur = v.period === 'custom' ? r.label : name(v.period);
+  const items = PERIOD_OPTIONS.map(([k]) => k === 'custom'
+    ? { label: name(k), icon: 'calendar', checked: v.period === 'custom', meta: v.period === 'custom' ? r.label : '',
+        onSelect: () => UI.open('range', { title: (prefix ? prefix + ': ' : '') + 'custom dates', from: v.period === 'custom' ? r.from : addDays(TODAY, -6), to: v.period === 'custom' ? r.to : TODAY,
+          onApply: (from, to) => onChange({ period: 'custom', from, to }) }) }
+    : { label: name(k), checked: v.period === k, meta: k === 'all' ? '' : periodRange(k, TODAY).from ? fmtShort(periodRange(k, TODAY).from) + (k === 'today' ? '' : ' – ' + fmtShort(periodRange(k, TODAY).to)) : '',
+        onSelect: () => onChange({ period: k, from: '', to: '' }) });
+  items.splice(items.length - 1, 0, { divider: true });
+  return html`<span id=${id} class="period-filter"><${Menu} label=${(prefix ? prefix + ': ' : '') + cur} icon="calendar" btnClass=${'btn sm' + (v.period !== 'all' ? ' filter-on' : '')} title=${title || 'Date filter'} items=${items} /></span>`;
+}
+
+/* "in the last 7 days", "this month", "on 3 Oct", "between 1 Oct and 9 Oct" */
+function addedText(f, r) {
+  if (!r) return 'any time';
+  if (f.period === 'today') return 'today';
+  if (f.period === 'month') return 'this month';
+  if (f.period === 'lastmonth') return 'in ' + r.label;
+  if (f.period === '7d' || f.period === '15d') return 'in the ' + r.label.toLowerCase();
+  if (r.from && r.from === r.to) return 'on ' + fmtShort(r.from);
+  return r.from ? 'between ' + fmtShort(r.from) + ' and ' + fmtShort(r.to) : 'up to ' + fmtShort(r.to);
+}
+
+function RangeModal({ title, sub, from, to, onApply }) {
+  const [a, setA] = useState(from || addDays(TODAY, -6));
+  const [b, setB] = useState(to || TODAY);
+  const ok = isISODate(a) && isISODate(b) && a <= b;
+  const submit = e => { e.preventDefault(); if (!ok) return; UI.close(); onApply(a, b); };
+  return html`<${Modal} title=${title || 'Custom dates'} sub=${sub} size="narrow" foot=${html`
+      <button type="button" class="btn" onClick=${() => UI.close()}>Cancel</button>
+      <button type="submit" form="range-form" class="btn primary" disabled=${!ok}>Apply</button>`}>
+    <form id="range-form" class="stack" onSubmit=${submit}>
+      <div class="fields">
+        <label class="field"><span>From</span><input id="range-from" type="date" class="input" value=${a} max=${b || undefined} onInput=${e => setA(e.target.value)} /></label>
+        <label class="field"><span>To</span><input id="range-to" type="date" class="input" value=${b} min=${a || undefined} onInput=${e => setB(e.target.value)} /></label>
+      </div>
+      ${isISODate(a) && isISODate(b) && a > b && html`<div class="note-box warn">The start date is after the end date.</div>`}
+      ${ok && html`<p class="muted" style="font-size:12.5px">${fmtLong(a)} to ${fmtLong(b)} · ${plural(daysBetween(a, b) + 1, 'day')}</p>`}
+    </form>
   <//>`;
 }
 
