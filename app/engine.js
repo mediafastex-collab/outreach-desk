@@ -123,11 +123,12 @@ const STATUSES = {
   nurture: { label: 'Follow up later', tone: 'today', open: true },
   paused: { label: 'Paused', tone: 'neutral', open: true },
   meeting: { label: 'Meeting booked', tone: 'good', open: false },
+  connected: { label: 'Connected', tone: 'good', open: false },
   not_interested: { label: 'Not interested', tone: 'muted', open: false },
   finished: { label: 'No reply', tone: 'muted', open: false },
   withdrawn: { label: 'Invite withdrawn', tone: 'muted', open: false },
 };
-const STATUS_ORDER = ['queued', 'invited', 'active', 'replied', 'interested', 'nurture', 'meeting', 'not_interested', 'finished', 'withdrawn', 'paused'];
+const STATUS_ORDER = ['queued', 'invited', 'connected', 'active', 'replied', 'interested', 'nurture', 'meeting', 'not_interested', 'finished', 'withdrawn', 'paused'];
 const OUTCOMES = ['interested', 'meeting', 'nurture', 'not_interested'];
 
 const DEFAULT_SETTINGS = { agencyName: 'Fastex', team: [], workDays: [1, 2, 3, 4, 5], staleDays: 21, reminderTime: '09:30', pacingOn: true, pacingMin: 5, pacingMax: 20 };
@@ -441,9 +442,16 @@ function entry(kind, on, by, extra) {
   if (extra) for (const k in extra) if (extra[k] !== undefined && extra[k] !== null && extra[k] !== '') e[k] = extra[k];
   return e;
 }
+/* Where a sequence ends: "Connected" when it was only a connection request and they accepted, otherwise "No reply". */
+function endStatus(seq, p) {
+  const steps = (seq && seq.steps) || [];
+  const c = connectIndex(seq);
+  return p && (p.acceptedOn || p.alreadyConnected) && c !== -1 && c === steps.length - 1 ? 'connected' : 'finished';
+}
+function isClosedEnd(st) { return st === 'finished' || st === 'connected'; }
 function statusAfter(seq, idx, p) {
   const steps = (seq && seq.steps) || [];
-  if (idx >= steps.length) return 'finished';
+  if (idx >= steps.length) return endStatus(seq, p);
   if (idx === 0) return 'queued';
   const c = connectIndex(seq);
   if (c >= idx) return 'queued';
@@ -476,7 +484,7 @@ function actCompleteStep(p, seq, on, by) {
   q.stepIndex = i + 1;
   q.stepId = steps[i + 1] ? steps[i + 1].id : null;
   if (step.type === 'connect') { q.status = 'invited'; q.invitedOn = on; }
-  else { q.status = statusAfter(seq, i + 1, q); if (q.status === 'finished') q.closedOn = on; }
+  else { q.status = statusAfter(seq, i + 1, q); if (isClosedEnd(q.status)) q.closedOn = on; }
   return withId(touch(q), p);
 }
 function actSkip(p, seq, on, by) {
@@ -492,7 +500,7 @@ function actSkip(p, seq, on, by) {
   q.stepIndex = i + 1;
   q.stepId = steps[i + 1] ? steps[i + 1].id : null;
   q.status = statusAfter(seq, i + 1, q);
-  if (q.status === 'finished') q.closedOn = on;
+  if (isClosedEnd(q.status)) q.closedOn = on;
   return withId(touch(q), p);
 }
 function actAccept(p, seq, on, by) {
@@ -502,7 +510,7 @@ function actAccept(p, seq, on, by) {
   q.lastDoneOn = on;
   q.snoozeUntil = null;
   const i = stepIndexOf(p, seq);
-  if (!seq || i >= seq.steps.length) { q.status = 'finished'; q.closedOn = on; }
+  if (!seq || i >= seq.steps.length) { q.status = seq ? endStatus(seq, q) : 'finished'; q.closedOn = on; }
   else q.status = 'active';
   return withId(touch(q), p);
 }
@@ -536,7 +544,7 @@ function actResume(p, seq, on, by) {
   const st = seq ? statusAfter(seq, i, q) : 'finished';
   q.status = st;
   q.pausedFrom = null;
-  q.closedOn = st === 'finished' ? on : null;
+  q.closedOn = isClosedEnd(st) ? on : null;
   q.snoozeUntil = null;
   q.log.push(entry('resumed', on, by));
   return withId(touch(q), p);
@@ -583,7 +591,7 @@ function actChangeSequence(p, seq, startIdx, on, by) {
   q.snoozeUntil = null;
   if (['queued', 'active', 'invited'].indexOf(q.status) !== -1) {
     q.status = statusAfter(seq, idx, q);
-    if (q.status === 'finished') q.closedOn = on;
+    if (isClosedEnd(q.status)) q.closedOn = on;
   }
   q.log.push(entry('sequence', on, by, { note: 'Moved to "' + seq.name + '" at step ' + (idx + 1) }));
   return withId(touch(q), p);
@@ -815,7 +823,7 @@ function newProspect(f, ctx) {
       p.stepId = steps[c + 1] ? steps[c + 1].id : null;
       p.lastDoneOn = start;
       p.alreadyConnected = true;
-      p.status = steps[c + 1] ? 'active' : 'finished';
+      p.status = steps[c + 1] ? 'active' : 'connected';
     }
   }
   return p;

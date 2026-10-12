@@ -87,7 +87,7 @@ function ProspectsView() {
     { header: 'Progress' },
     { label: 'Mark current step done', icon: 'check', onSelect: () => { Act.bulk(selected.filter(p => p.status === 'queued' || p.status === 'active'), p => actCompleteStep(p, seqFor(p), TODAY, me()), n => plural(n, 'step') + ' logged.'); clearSel(); } },
     { label: 'Mark accepted today', icon: 'userCheck', onSelect: () => { Act.bulk(selected.filter(p => p.status === 'invited'), p => actAccept(p, seqFor(p), TODAY, me()), n => plural(n, 'prospect') + ' marked accepted.'); clearSel(); } },
-    { label: 'Resume sequence', icon: 'play', onSelect: () => { Act.bulk(selected.filter(p => ['paused', 'replied', 'interested', 'nurture'].indexOf(p.status) !== -1), p => actResume(p, seqFor(p), TODAY, me()), n => plural(n, 'prospect') + ' resumed.'); clearSel(); } },
+    { label: 'Resume sequence', icon: 'play', onSelect: () => { Act.bulk(selected.filter(p => ['paused', 'replied', 'interested', 'nurture', 'connected'].indexOf(p.status) !== -1), p => actResume(p, seqFor(p), TODAY, me()), n => plural(n, 'prospect') + ' resumed.'); clearSel(); } },
     { label: 'Pause', icon: 'pause', onSelect: () => { Act.bulk(selected.filter(p => (STATUSES[p.status] || {}).open && p.status !== 'paused'), p => actSetStatus(p, seqFor(p), 'paused', TODAY, me(), {}), n => plural(n, 'prospect') + ' paused.'); clearSel(); } },
     { header: 'Outcome' },
     { label: 'Interested', onSelect: () => { Act.bulk(selected, p => actSetStatus(p, seqFor(p), 'interested', TODAY, me(), { followUpOn: addDays(TODAY, 2), followUpNote: 'Follow up on their interest' }), n => plural(n, 'prospect') + ' marked interested.'); clearSel(); } },

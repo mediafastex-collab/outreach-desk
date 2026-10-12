@@ -33,7 +33,8 @@ function ClientCard({ c, data, usage, board }) {
     </div>
     <div class="pipe">
       <div><span class="v num">${sc.invited}</span><span class="k">Invites pending</span></div>
-      <div><span class="v num">${sc.active + sc.queued}</span><span class="k">In progress</span></div>
+      ${sc.connected > 0 && !(sc.active + sc.queued) ? html`<div><span class="v num">${sc.connected}</span><span class="k">Connected</span></div>`
+        : html`<div><span class="v num">${sc.active + sc.queued}</span><span class="k">In progress</span></div>`}
       <div><span class="v num">${sc.replied + sc.interested + sc.nurture}</span><span class="k">Conversations</span></div>
       <div><span class="v num">${sc.meeting}</span><span class="k">Meetings</span></div>
     </div>

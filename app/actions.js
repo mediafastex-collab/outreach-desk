@@ -40,7 +40,7 @@ const Act = {
   accept(p, on, time) {
     const d = on || TODAY;
     const next = retime(actAccept(p, seqFor(p), d, me()), (p.log || []).length, d, time);
-    return Act.commit(p, next, fullName(p) + ' accepted. ' + (next.status === 'active' ? 'First message is now on the list.' : ''));
+    return Act.commit(p, next, fullName(p) + ' accepted. ' + (next.status === 'active' ? 'First message is now on the list.' : next.status === 'connected' ? 'Marked Connected. This sequence ends at the connection.' : ''));
   },
   reply(p, on, note, outcome, opts, time) {
     const seq = seqFor(p);
