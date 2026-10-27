@@ -285,9 +285,12 @@ function checkLinkedIn(raw) {
   const path = u.pathname.replace(/\/+$/, '');
   let m = path.match(/^\/in\/([^/]+)/i);
   if (m) {
-    const slug = decodeSafe(m[1]).toLowerCase();
+    const raw = decodeSafe(m[1]);
+    const slug = raw.toLowerCase();
     if (!LI_SLUG.test(slug)) return { ok: false, error: 'The profile part "' + slug + '" does not look like a real LinkedIn profile name.' };
-    return { ok: true, url: 'https://www.linkedin.com/in/' + encodeURIComponent(slug) + '/', key: 'in:' + slug, slug, kind: 'profile' };
+    /* Member-ID links from Sales Navigator (/in/ACwAA…) are case-sensitive, so they keep their capitals. */
+    const keep = /^AC[a-zA-Z0-9]AA/.test(raw) ? raw : slug;
+    return { ok: true, url: 'https://www.linkedin.com/in/' + encodeURIComponent(keep) + '/', key: 'in:' + slug, slug, kind: 'profile' };
   }
   m = path.match(/^\/pub\/([^/]+)((?:\/[a-z0-9]+){0,3})$/i);
   if (m) {
