@@ -477,6 +477,14 @@ function actCompleteStep(p, seq, on, by) {
   const i = stepIndexOf(p, seq);
   const step = steps[i];
   if (!step) return withId(q, p);
+  /* Their invite is already out (e.g. after being moved back to step 1): move past it without logging a second one. */
+  if (step.type === 'connect' && q.invitedOn && q.status !== 'withdrawn') {
+    q.stepIndex = i + 1;
+    q.stepId = steps[i + 1] ? steps[i + 1].id : null;
+    q.status = q.acceptedOn ? statusAfter(seq, i + 1, q) : 'invited';
+    if (isClosedEnd(q.status)) q.closedOn = q.closedOn || on;
+    return withId(touch(q), p);
+  }
   if (q.status === 'invited' && step.type !== 'connect') {
     q.acceptedOn = q.acceptedOn || on;
     q.log.push(entry('accepted', on, by, { auto: true }));
@@ -587,7 +595,11 @@ function actRestart(p, seq, on, by, skipInvite) {
 }
 function actChangeSequence(p, seq, startIdx, on, by) {
   const q = prep(p);
-  const idx = Math.max(0, Math.min(startIdx | 0, seq.steps.length));
+  let idx = Math.max(0, Math.min(startIdx | 0, seq.steps.length));
+  /* Already invited: never send them back to the invite step. */
+  const c = connectIndex(seq);
+  const skipped = c !== -1 && idx <= c && !!q.invitedOn && q.status !== 'withdrawn';
+  if (skipped) idx = c + 1;
   q.sequenceId = seq.id;
   q.stepIndex = idx;
   q.stepId = seq.steps[idx] ? seq.steps[idx].id : null;
@@ -596,7 +608,7 @@ function actChangeSequence(p, seq, startIdx, on, by) {
     q.status = statusAfter(seq, idx, q);
     if (isClosedEnd(q.status)) q.closedOn = on;
   }
-  q.log.push(entry('sequence', on, by, { note: 'Moved to "' + seq.name + '" at step ' + (idx + 1) }));
+  q.log.push(entry('sequence', on, by, { note: 'Moved to "' + seq.name + '" at step ' + (idx + 1) + (skipped ? ' (already invited, so the invite step was skipped)' : '') }));
   return withId(touch(q), p);
 }
 function actSetReminder(p, date, note, on, by, time) {

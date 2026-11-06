@@ -85,7 +85,20 @@ function ProspectsView() {
 
   const bulkItems = [
     { header: 'Progress' },
-    { label: 'Mark current step done', icon: 'check', onSelect: () => { Act.bulk(selected.filter(p => p.status === 'queued' || p.status === 'active'), p => actCompleteStep(p, seqFor(p), TODAY, me()), n => plural(n, 'step') + ' logged.'); clearSel(); } },
+    { label: 'Mark current step done', icon: 'check', onSelect: () => {
+      const go = selected.filter(p => p.status === 'queued' || p.status === 'active');
+      const isInvite = p => { const s = seqFor(p); const st = s && s.steps[stepIndexOf(p, s)]; return !!st && st.type === 'connect'; };
+      const inv = go.filter(p => isInvite(p) && !p.invitedOn).length, already = go.filter(p => isInvite(p) && p.invitedOn).length;
+      const msgs = go.length - inv - already;
+      const run = () => { Act.bulk(go, p => actCompleteStep(p, seqFor(p), TODAY, me()), n => plural(n, 'step') + ' logged.'); clearSel(); };
+      if (!go.length) { UI.toast('None of the selected people have a step to do.', { bad: true }); return; }
+      UI.open('confirm', {
+        title: 'Log ' + plural(go.length, 'step') + ' as sent today?', confirmLabel: 'Yes, they were sent',
+        body: 'This records ' + [inv ? plural(inv, 'connection request') : '', msgs ? plural(msgs, 'message') : ''].filter(Boolean).join(' and ') + ' as sent today'
+          + (already ? ' (' + plural(already, 'person', 'people') + ' already invited are moved on without a second invite)' : '')
+          + '. Only do this for steps you really sent on LinkedIn; Reports count every one.',
+        onConfirm: run });
+    } },
     { label: 'Mark accepted today', icon: 'userCheck', onSelect: () => { Act.bulk(selected.filter(p => p.status === 'invited'), p => actAccept(p, seqFor(p), TODAY, me()), n => plural(n, 'prospect') + ' marked accepted.'); clearSel(); } },
     { label: 'Resume sequence', icon: 'play', onSelect: () => { Act.bulk(selected.filter(p => ['paused', 'replied', 'interested', 'nurture', 'connected'].indexOf(p.status) !== -1), p => actResume(p, seqFor(p), TODAY, me()), n => plural(n, 'prospect') + ' resumed.'); clearSel(); } },
     { label: 'Pause', icon: 'pause', onSelect: () => { Act.bulk(selected.filter(p => (STATUSES[p.status] || {}).open && p.status !== 'paused'), p => actSetStatus(p, seqFor(p), 'paused', TODAY, me(), {}), n => plural(n, 'prospect') + ' paused.'); clearSel(); } },
@@ -668,13 +681,15 @@ function BulkAddModal({ clientId }) {
     setFileErr('');
     if (!file) return;
     try {
-      const rows = parseCSV(await readFileText(file));
+      const isXlsx = /\.xlsx$/i.test(file.name) || /spreadsheetml/.test(file.type || '');
+      if (/\.xls$/i.test(file.name)) { setFileErr('Old .xls files can\'t be read. Open it in Excel or Google Sheets and save as .xlsx or CSV.'); return; }
+      const rows = (isXlsx ? await readXlsxRows(file) : parseCSV(await readFileText(file))).filter(r => r.some(c => String(c == null ? '' : c).trim()));
       if (rows.length < 2) { setFileErr('That file has no data rows.'); return; }
       const header = rows[0].map(h => String(h).trim());
       const body = rows.slice(1);
       setCsv({ name: file.name, header, rows: body });
       setMapping(guessMapping(header, body));
-    } catch (er) { setFileErr('Could not read that file. Save it as CSV (UTF-8) and try again.'); }
+    } catch (er) { setFileErr('Could not read that file' + (er && er.message ? ' (' + er.message + ')' : '') + '. Save it as .xlsx or CSV (UTF-8) and try again.'); }
   };
   const run = async () => {
     const seq = data.seqs[opts.sequenceId];
@@ -719,7 +734,7 @@ function BulkAddModal({ clientId }) {
     </div>
     <div class="tabs" role="tablist">
       <button type="button" role="tab" aria-selected=${tab === 'paste' ? 'true' : 'false'} onClick=${() => setTab('paste')}>Paste LinkedIn URLs</button>
-      <button type="button" role="tab" aria-selected=${tab === 'csv' ? 'true' : 'false'} onClick=${() => setTab('csv')}>Import CSV</button>
+      <button type="button" role="tab" aria-selected=${tab === 'csv' ? 'true' : 'false'} onClick=${() => setTab('csv')}>Import Excel or CSV</button>
     </div>
     ${tab === 'paste' ? html`
       <label class="field"><span>One per line <span class="hint">URL only, or "URL, Full name, Company, Title"</span></span>
@@ -727,8 +742,8 @@ function BulkAddModal({ clientId }) {
           placeholder=${'https://www.linkedin.com/in/jane-doe\nlinkedin.com/in/raj-patel-4b2a1, Raj Patel, Northwind, Head of Growth'} value=${paste} onInput=${e => setPaste(e.target.value)}></textarea></label>
       <p class="hint muted" style="font-size:12.5px">Names are read from the URL when you don't give one (linkedin.com/in/jane-doe-12ab → Jane Doe). Check them before messaging.</p>`
     : html`
-      <label class="field"><span>CSV file <span class="hint">exports from Sales Navigator tools, Apollo, Clay or a spreadsheet all work</span></span>
-        <input id="b-file" type="file" accept=".csv,text/csv,.tsv,text/plain" class="input" onChange=${onFile} /></label>
+      <label class="field"><span>Excel (.xlsx) or CSV file <span class="hint">exports from Sales Navigator tools, Apollo, Clay or any spreadsheet work; the first sheet is used</span></span>
+        <input id="b-file" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.csv,text/csv,.tsv,text/plain" class="input" onChange=${onFile} /></label>
       ${fileErr && html`<div class="note-box bad">${fileErr}</div>`}
       ${csv && html`<div class="stack">
         <p class="soft" style="font-size:13px">${csv.name}: ${fmtNum(csv.rows.length)} rows. Match the columns:</p>

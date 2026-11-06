@@ -199,6 +199,75 @@ function readFileText(file) {
   });
 }
 
+/* ---------- Excel (.xlsx) reading, no library: unzip with the browser, read the first sheet's XML ---------- */
+async function unzipEntries(buf) {
+  const v = new DataView(buf);
+  let eocd = -1;
+  for (let i = buf.byteLength - 22; i >= Math.max(0, buf.byteLength - 66000); i--) if (v.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+  if (eocd < 0) throw new Error('not an .xlsx file');
+  const count = v.getUint16(eocd + 10, true);
+  let p = v.getUint32(eocd + 16, true);
+  const out = {};
+  const dec = new TextDecoder();
+  for (let n = 0; n < count; n++) {
+    if (v.getUint32(p, true) !== 0x02014b50) break;
+    const method = v.getUint16(p + 10, true), size = v.getUint32(p + 20, true);
+    const nameLen = v.getUint16(p + 28, true), extraLen = v.getUint16(p + 30, true), commentLen = v.getUint16(p + 32, true);
+    const local = v.getUint32(p + 42, true);
+    const name = dec.decode(new Uint8Array(buf, p + 46, nameLen));
+    out[name] = { method, size, local };
+    p += 46 + nameLen + extraLen + commentLen;
+  }
+  out.read = async name => {
+    const e = out[name];
+    if (!e) return null;
+    const start = e.local + 30 + v.getUint16(e.local + 26, true) + v.getUint16(e.local + 28, true);
+    const raw = new Uint8Array(buf, start, e.size);
+    if (e.method === 0) return dec.decode(raw);
+    if (e.method !== 8 || typeof DecompressionStream === 'undefined') throw new Error('unsupported compression');
+    const stream = new Blob([raw]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+    return await new Response(stream).text();
+  };
+  return out;
+}
+async function readXlsxRows(file) {
+  const z = await unzipEntries(await file.arrayBuffer());
+  const xml = s => new DOMParser().parseFromString(s, 'application/xml');
+  const kids = (el, tag) => Array.from(el.getElementsByTagNameNS('*', tag));
+  const text = el => kids(el, 't').map(t => t.textContent).join('');
+  let sheetPath = 'xl/worksheets/sheet1.xml';
+  const wb = await z.read('xl/workbook.xml'), rels = await z.read('xl/_rels/workbook.xml.rels');
+  if (wb && rels) {
+    const first = kids(xml(wb), 'sheet')[0];
+    const rid = first && (first.getAttribute('r:id') || first.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'id'));
+    const rel = kids(xml(rels), 'Relationship').find(r => r.getAttribute('Id') === rid);
+    if (rel) { const t = rel.getAttribute('Target').replace(/^\//, ''); sheetPath = t.startsWith('xl/') ? t : 'xl/' + t; }
+  }
+  const sst = await z.read('xl/sharedStrings.xml');
+  const shared = sst ? kids(xml(sst), 'si').map(text) : [];
+  const sheet = await z.read(sheetPath);
+  if (!sheet) throw new Error('no sheet found');
+  const colIdx = ref => { let n = 0; for (const ch of String(ref).replace(/[0-9]/g, '')) n = n * 26 + ch.charCodeAt(0) - 64; return n - 1; };
+  const rows = [];
+  for (const row of kids(xml(sheet), 'row')) {
+    const r = [];
+    for (const c of kids(row, 'c')) {
+      const t = c.getAttribute('t'), vEl = kids(c, 'v')[0];
+      let val = '';
+      if (t === 's') val = shared[parseInt(vEl ? vEl.textContent : '', 10)] || '';
+      else if (t === 'inlineStr') val = text(c);
+      else if (t === 'b') val = vEl && vEl.textContent === '1' ? 'TRUE' : 'FALSE';
+      else val = vEl ? vEl.textContent : '';
+      const i = c.getAttribute('r') ? colIdx(c.getAttribute('r')) : r.length;
+      while (r.length < i) r.push('');
+      r[i] = val;
+    }
+    rows.push(r);
+  }
+  const w = rows.reduce((m, r) => Math.max(m, r.length), 0);
+  return rows.map(r => r.concat(Array(w - r.length).fill('')));
+}
+
 /* ---------- menu (fixed-position dropdown) ---------- */
 function Menu({ label, icon, items, btnClass, title }) {
   const [open, setOpen] = useState(false);
