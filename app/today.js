@@ -596,6 +596,7 @@ function RunModal({ accountKey }) {
       ${wait > 0 && html`<div class="pace-banner"><${Countdown} secs=${wait} total=${cooldownTotal(acctKeyOf(p))} label="Short pause before the next send:" /><span class="muted">A random ${pacingSettings().min}–${pacingSettings().max} second gap between sends keeps this account's activity looking human. Read the profile meanwhile.</span></div>`}
       <div class="task-meta">
         <span class=${'pill ' + GROUP_TONE[task.group]}><${Icon} n=${isStep ? (STEP_TYPES[task.step.type] || STEP_TYPES.task).icon : GROUP_ICON[task.group]} s=${12} />${isStep ? task.title : 'Reminder'}</span>
+        ${task.variant && html`<span class="pill tone-neutral" title="Variant A goes out on odd dates, Variant B on even dates">Variant ${task.variant}</span>`}
         <${Due} due=${task.due} time=${task.time} />
         ${task.missing && task.missing.length > 0 && html`<span class="pill tone-overdue">Missing ${task.missing.join(', ')}</span>`}
         ${isStep && task.step.type === 'connect' && draft.trim() && html`<${Chars} text=${draft} connect=${true} />`}

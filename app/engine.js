@@ -426,6 +426,12 @@ function templateValues(p, client, sender) {
     senderName: sn, senderFirstName: sn.split(' ')[0], clientName: client && client.name,
   };
 }
+/* Steps can carry a second text (Variant B): A goes out on odd dates, B on even dates. */
+function stepVariant(step, on) {
+  if (!step || !String(step.templateB || '').trim()) return '';
+  return dateOf(on || todayISO()).getDate() % 2 === 0 ? 'B' : 'A';
+}
+function stepTemplate(step, on) { return stepVariant(step, on) === 'B' ? step.templateB : ((step && step.template) || ''); }
 function fillTemplate(tpl, p, client, sender) {
   const vals = templateValues(p, client, sender);
   const missing = [];
@@ -875,11 +881,11 @@ function prospectTasks(p, ctx) {
     const i = stepIndexOf(p, seq);
     if (i < seq.steps.length) {
       const step = seq.steps[i];
-      const filled = fillTemplate(step.template, p, client, sender);
+      const filled = fillTemplate(stepTemplate(step, t), p, client, sender);
       const due = stepDue(p, seq, i, ctx.settings);
       out.push(Object.assign({
         key: p.clientId + '/' + p.id + ':step:' + i, kind: 'step', group: groupOf(step.type),
-        idx: i, step, due, time: stepTime(p, seq, i, due),
+        idx: i, step, due, time: stepTime(p, seq, i, due), variant: stepVariant(step, t),
         title: stepTitle(seq, i), text: filled.text, missing: filled.missing,
       }, base));
     }

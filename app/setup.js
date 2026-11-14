@@ -278,6 +278,11 @@ function FlowStep({ seq, i, open, onToggle, onChange, onMove, onRemove, taRef, i
           </div>
           <span class="hint">Text in [square brackets] is flagged on every task until you replace it, so nothing goes out half-written.</span>
         </div>`}
+        ${hasText && st.type !== 'connect' && html`<div class="field"><span>Variant B <span class="hint">optional. When filled, the text above (Variant A) goes out on odd dates and this one on even dates</span></span>
+          <textarea id=${'fl-mb-' + st.id} class="textarea" style="min-height:100px" value=${st.templateB || ''} onInput=${e => set('templateB', e.target.value)}
+            placeholder="Leave empty to always send the text above."></textarea>
+          ${String(st.templateB || '').trim() && html`<div class="btn-row" style="justify-content:flex-end"><${Chars} text=${st.templateB} connect=${false} /></div>`}
+        </div>`}
         <label class="field"><span>Short name <span class="hint">optional, e.g. "Value" or "Breakup"</span></span>
           <input id=${'fl-l-' + st.id} class="input sm" style="max-width:280px" value=${st.label || ''} onInput=${e => set('label', e.target.value)} /></label>
         <div class="btn-row flow-tools">
@@ -293,7 +298,7 @@ function FlowStep({ seq, i, open, onToggle, onChange, onMove, onRemove, taRef, i
 
 function seqSignature(s) {
   return JSON.stringify([s.name || '', s.description || '', s.clientId || null,
-    (s.steps || []).map(x => [x.id, x.type, x.label || '', parseInt(x.delayDays, 10) || 0, x.template || ''])]);
+    (s.steps || []).map(x => [x.id, x.type, x.label || '', parseInt(x.delayDays, 10) || 0, x.template || '', x.templateB || '', x.time || ''])]);
 }
 function SequenceEditor({ seq, data }) {
   const [d, setD] = useState(() => clone(seq));

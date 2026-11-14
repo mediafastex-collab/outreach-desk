@@ -253,7 +253,7 @@ function NextCard({ p, data }) {
     const step = seq.steps[i];
     if (!step) return null;
     const due = stepDue(p, seq, i, data.settings);
-    const filled = fillTemplate(step.template, p, client, sender);
+    const filled = fillTemplate(stepTemplate(step, TODAY), p, client, sender);
     const text = filled.text.trim();
     const di = dueInfo(due, TODAY);
     return html`<div class="next-card">
@@ -325,7 +325,7 @@ function Timeline({ p, seq, data }) {
   const tl = projectTimeline(p, seq, data.settings, TODAY);
   return html`<ol class="tl">
     ${tl.map(x => {
-      const filled = fillTemplate(x.step.template, p, client, sender).text.trim();
+      const filled = fillTemplate(stepTemplate(x.step, x.on || x.due || TODAY), p, client, sender).text.trim();
       let when = '', sub = '';
       if (x.state === 'done') { when = x.on ? fmtShort(x.on) : ''; sub = groupOf(x.step.type) === 'touch' ? 'Done' : 'Sent'; }
       else if (x.state === 'skipped') { when = x.on ? fmtShort(x.on) : ''; sub = 'Skipped'; }
