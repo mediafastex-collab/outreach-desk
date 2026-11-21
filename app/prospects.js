@@ -177,7 +177,8 @@ function ProspectsView() {
     </div>
 
     ${selected.length > 0 && html`<div class="bulkbar">
-      <strong>${selected.length} selected</strong>
+      <strong>${fmtNum(selected.length)} selected</strong>
+      ${selected.length < rows.length && html`<button type="button" class="btn sm" onClick=${() => setSel(new Set(rows.map(r => keyOf(r.p))))}>Select all ${fmtNum(rows.length)} matching</button>`}
       <${Menu} label="Actions" btnClass="btn sm" items=${bulkItems} />
       <button type="button" class="btn sm" onClick=${clearSel}>Clear</button>
     </div>`}

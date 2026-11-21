@@ -280,8 +280,11 @@ function Menu({ label, icon, items, btnClass, title }) {
     const r = btn.current.getBoundingClientRect();
     const below = window.innerHeight - r.bottom;
     const style = { right: Math.max(8, window.innerWidth - r.right) + 'px' };
-    if (below < 280 && r.top > below) style.bottom = (window.innerHeight - r.top + 4) + 'px';
+    /* Open on the side with more room and let the menu use all of it, so long menus aren't cut off. */
+    const up = below < 280 && r.top > below;
+    if (up) style.bottom = (window.innerHeight - r.top + 4) + 'px';
     else style.top = (r.bottom + 4) + 'px';
+    style.maxHeight = Math.max(160, (up ? r.top : below) - 16) + 'px';
     setPos(style);
     setOpen(true);
   };
