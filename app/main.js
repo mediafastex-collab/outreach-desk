@@ -11,6 +11,8 @@ const MODALS = {
   confirm: p => html`<${ConfirmModal} ...${p} />`,
   date: p => html`<${DateModal} ...${p} />`,
   range: p => html`<${RangeModal} ...${p} />`,
+  password: () => html`<${PasswordModal} />`,
+  user: p => html`<${UserModal} ...${p} />`,
   text: p => html`<${TextModal} ...${p} />`,
   accept: p => html`<${AcceptanceModal} accountKey=${p.key} />`,
   run: p => html`<${RunModal} accountKey=${p.key} />`,
@@ -98,11 +100,18 @@ function Rail({ counts }) {
       </button>`)}
     </div>
     <div class="rail-foot">
-      ${hasTeam ? html`<label for="rail-me">You</label>
+      ${Store.user ? html`<div class="me-card">
+          <span class="me-av">${(Store.user.name || '?').trim().charAt(0).toUpperCase()}</span>
+          <span class="me-text"><strong>${Store.user.name}</strong><span class="muted">${ROLE_INFO[Store.user.role] ? ROLE_INFO[Store.user.role].label : Store.user.role}${Store.user.clients ? ' · ' + plural(Store.user.clients.length, 'client') : ''}</span></span>
+          <${Menu} icon="more" title="Your account" items=${[
+            { label: 'Change password', icon: 'lock', onSelect: () => UI.open('password', {}) },
+          ]} />
+        </div>`
+        : hasTeam ? html`<label for="rail-me">You</label>
         <${MemberSelect} id="rail-me" cls="select sm" settings=${data.settings} value=${UI.me} noneLabel="Pick your name" onChange=${x => { pref('me', x || null); UI.set({ me: x }); }} />`
         : html`<button type="button" class="btn sm" onClick=${() => UI.go('settings')}><${Icon} n="users" s=${14} />Add your team</button>`}
       <${SyncStatus} />
-      ${Store.mode === 'server' && html`<button type="button" id="rail-logout" class="btn sm ghost" onClick=${() => UI.open('confirm', { title: 'Log out?', body: 'This browser will ask for the team passcode again. Everyone\'s data stays saved in the shared workspace.', confirmLabel: 'Log out', onConfirm: () => { pref('me', null); UI.set({ me: '' }); forgetPasscode(); } })}><${Icon} n="logout" s=${14} />Log out</button>`}
+      ${Store.user && html`<button type="button" id="rail-logout" class="btn sm ghost" onClick=${() => UI.open('confirm', { title: 'Log out?', body: 'You\'ll need your email and password to sign in again. Your work stays saved in the shared workspace.', confirmLabel: 'Log out', onConfirm: () => { pref('me', null); UI.set({ me: '' }); signOut(); } })}><${Icon} n="logout" s=${14} />Log out</button>`}
     </div>
   </nav>`;
 }
@@ -139,54 +148,94 @@ function SyncStatus() {
   if (Store.mode === 'server') {
     const off = Store.sync.state === 'offline';
     const ago = Store.sync.last ? Math.max(0, Math.round((Date.now() - Store.sync.last) / 1000)) : null;
-    return html`<button type="button" class="sync linkish" title=${off ? 'Cannot reach the shared workspace. Retrying.' : 'Saved on Cloudflare. Everyone with the passcode sees the same data.'} onClick=${() => Store.real && Store.real.backend.sync()}>
+    return html`<button type="button" class="sync linkish" title=${off ? 'Cannot reach the shared workspace. Retrying.' : 'Saved in the shared workspace on Cloudflare. Your team sees the same data.'} onClick=${() => Store.real && Store.real.backend.sync()}>
       <span class=${'dot ' + (off ? 'local' : '')}></span>${off ? 'Offline · retrying' : 'Shared · synced' + (ago != null && ago > 15 ? ' ' + (ago < 120 ? ago + 's' : Math.round(ago / 60) + 'm') + ' ago' : '')}</button>`;
   }
   return html`<div class="sync"><span class=${'dot ' + (Store.demoOn ? 'demo' : Store.mode === 'local' ? 'local' : '')}></span>
     ${Store.demoOn ? 'Sample data' : Store.mode === 'cloud' ? 'Shared with your team' : 'Saved in this browser only'}</div>`;
 }
 
-/* Team passcode screen for the shared Cloudflare workspace. */
+/* Sign-in screens for the shared Cloudflare workspace. */
+function ForgotHelp() {
+  const [open, setOpen] = useState(false);
+  const wa = Store.serverInfo && Store.serverInfo.adminWhatsapp;
+  if (!open) return html`<button type="button" class="linkish" style="font-size:13px;align-self:flex-start" onClick=${() => setOpen(true)}>Forgot password?</button>`;
+  return html`<div class="note-box">
+    <p style="margin-bottom:8px"><strong>Forgot your password?</strong> Your admin can set a new one for you in Settings → Users & access. You'll pick your own after signing in.</p>
+    ${wa ? html`<a class="btn sm primary" href=${'https://wa.me/' + wa + '?text=' + encodeURIComponent('Hi, I forgot my Outreach Desk password (outreach.fastexmedia.com). Can you reset it?')} target="_blank" rel="noopener noreferrer"><${Icon} n="send" s=${14} />Message the admin on WhatsApp</a>`
+      : html`<p class="muted" style="font-size:12.5px">Message your workspace admin.</p>`}
+  </div>`;
+}
 function Gate() {
-  const [key, setKey] = useState('');
+  const [email, setEmail] = useState(pref('lastEmail') || '');
+  const [pw, setPw] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(Store.gateError || '');
   const n = Object.keys(localDocs()).length;
-  const [forgot, setForgot] = useState(false);
-  const wa = Store.serverInfo && Store.serverInfo.adminWhatsapp;
   const submit = async e => {
     e.preventDefault();
-    const k = key.trim();
-    if (!k) return;
+    if (!email.trim() || !pw) return;
     setBusy(true); setErr('');
-    const r = await checkPasscode(k);
+    const m = await signIn(email.trim(), pw);
     setBusy(false);
-    if (r === 'wrong') { setErr('That passcode is not right. Check with whoever set up the desk.'); return; }
-    if (r === 'down') { setErr('Could not reach the shared workspace. Check your internet connection and try again.'); return; }
-    pref('workspaceKey', k);
-    pref('forceLocal', null);
+    if (m) { setErr(m); return; }
+    pref('lastEmail', email.trim());
     Store.gateError = '';
-    connectServer(k);
   };
   return html`<div class="gate-screen">
     <form class="gate-card" onSubmit=${submit}>
       <span class="brand-mark" style="width:44px;height:44px;border-radius:12px"><${Icon} n="send" s=${20} /></span>
       <h1>Outreach Desk</h1>
-      <p class="soft">This workspace is shared by your team. Enter the team passcode to open it on this browser. You only need to do this once per browser.</p>
-      <label class="field"><span>Team passcode</span>
-        <input id="gate-key" class="input" type="password" autocomplete="current-password" data-autofocus autofocus value=${key} onInput=${ev => setKey(ev.target.value)} /></label>
+      <p class="soft">Sign in with the email and password your admin gave you.</p>
+      <label class="field"><span>Email</span>
+        <input id="login-email" class="input" type="email" autocomplete="username" data-autofocus autofocus value=${email} onInput=${ev => setEmail(ev.target.value)} /></label>
+      <label class="field"><span>Password</span>
+        <input id="login-password" class="input" type="password" autocomplete="current-password" value=${pw} onInput=${ev => setPw(ev.target.value)} /></label>
       ${err && html`<div class="note-box bad">${err}</div>`}
-      <button type="submit" class="btn primary" disabled=${busy || !key.trim()}>${busy ? 'Checking…' : 'Open shared workspace'}</button>
-      ${!forgot ? html`<button type="button" class="linkish" style="font-size:13px;align-self:flex-start" onClick=${() => setForgot(true)}>Forgot passcode?</button>`
-        : html`<div class="note-box">
-          <p style="margin-bottom:8px"><strong>Forgot the passcode?</strong> The whole team shares one passcode, set by your workspace admin. Ask them for it, or ask them to set a new one.</p>
-          ${wa ? html`<a class="btn sm primary" href=${'https://wa.me/' + wa + '?text=' + encodeURIComponent('Hi, I need the Outreach Desk team passcode (outreach.fastexmedia.com). Can you send it or reset it?')} target="_blank" rel="noopener noreferrer"><${Icon} n="send" s=${14} />Message the admin on WhatsApp</a>`
-            : html`<p class="muted" style="font-size:12.5px">Message whoever set up the desk for your team.</p>`}
-        </div>`}
+      <button type="submit" class="btn primary" disabled=${busy || !email.trim() || !pw}>${busy ? 'Signing in…' : 'Sign in'}</button>
+      <${ForgotHelp} />
       ${n > 0 && html`<p class="muted" style="font-size:12.5px">This browser also has ${plural(n, 'record')} saved from before. After you sign in you can copy them into the shared workspace.</p>`}
-      <button type="button" class="btn sm ghost" onClick=${() => { pref('forceLocal', true); startLocal(); }}>Use this browser only instead</button>
     </form>
   </div>`;
+}
+function SetupScreen() {
+  const [v, setV] = useState({ code: '', name: '', email: '', password: '', confirm: '' });
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const set = k => e => setV(Object.assign({}, v, { [k]: e.target.value }));
+  const ok = v.code && v.name.trim() && v.email.trim() && v.password.length >= 8 && v.password === v.confirm;
+  const submit = async e => {
+    e.preventDefault();
+    if (!ok) return;
+    setBusy(true); setErr('');
+    const m = await setupAdmin({ code: v.code, name: v.name.trim(), email: v.email.trim(), password: v.password });
+    setBusy(false);
+    if (m) setErr(m);
+  };
+  return html`<div class="gate-screen">
+    <form class="gate-card" onSubmit=${submit}>
+      <span class="brand-mark" style="width:44px;height:44px;border-radius:12px"><${Icon} n="send" s=${20} /></span>
+      <h1>Create the admin account</h1>
+      <p class="soft">The desk now uses personal logins. Create the first admin account, then add your team in Settings → Users & access.</p>
+      <label class="field"><span>Setup code <span class="hint">the old team passcode</span></span>
+        <input id="setup-code" class="input" type="password" autocomplete="off" data-autofocus autofocus value=${v.code} onInput=${set('code')} /></label>
+      <label class="field"><span>Your name</span><input id="setup-name" class="input" autocomplete="name" value=${v.name} onInput=${set('name')} /></label>
+      <label class="field"><span>Email</span><input id="setup-email" class="input" type="email" autocomplete="username" value=${v.email} onInput=${set('email')} /></label>
+      <label class="field"><span>Password <span class="hint">at least 8 characters</span></span><input id="setup-password" class="input" type="password" autocomplete="new-password" value=${v.password} onInput=${set('password')} /></label>
+      <label class="field"><span>Repeat password</span><input id="setup-confirm" class="input" type="password" autocomplete="new-password" value=${v.confirm} onInput=${set('confirm')} /></label>
+      ${v.confirm && v.password !== v.confirm && html`<div class="note-box warn">The passwords don't match.</div>`}
+      ${err && html`<div class="note-box bad">${err}</div>`}
+      <button type="submit" class="btn primary" disabled=${busy || !ok}>${busy ? 'Creating…' : 'Create admin account'}</button>
+    </form>
+  </div>`;
+}
+function OfflineScreen() {
+  return html`<div class="gate-screen"><div class="gate-card">
+    <span class="brand-mark" style="width:44px;height:44px;border-radius:12px"><${Icon} n="send" s=${20} /></span>
+    <h1>Can't reach the desk</h1>
+    <p class="soft">The shared workspace isn't answering. Check your internet connection, then try again.</p>
+    <button type="button" class="btn primary" onClick=${() => location.reload()}>Try again</button>
+  </div></div>`;
 }
 
 async function startWorkspace() {
@@ -230,7 +279,7 @@ function Banners() {
   }
   if (VIEWS.indexOf(UI.view) !== -1 && Object.keys(currentData().clients).length) out.push(html`<${PageHint} key=${'hint-' + UI.view} view=${UI.view} />`);
   if (Store.readOnly && !Store.demoOn) {
-    out.push(html`<div class="banner ro" key="ro"><${Icon} n="info" /><p><strong>View only.</strong> Ask the owner for edit access to log activity here.</p></div>`);
+    out.push(html`<div class="banner ro" key="ro"><${Icon} n="info" /><p><strong>View only.</strong> ${Store.user ? 'Your role is Viewer. Ask an admin if you need to log activity.' : 'Ask the owner for edit access to log activity here.'}</p></div>`);
   }
   if (!out.length) return null;
   return html`<div class="banners">${out}</div>`;
@@ -248,6 +297,7 @@ function Boundary({ children }) {
 function App() {
   const [, force] = useState(0);
   const seen = useRef(Store.ver);
+  const linkTried = useRef(false);
   useLayoutEffect(() => {
     const f = () => { seen.current = Store.ver; force(n => n + 1); };
     Store.listeners.add(f);
@@ -260,9 +310,25 @@ function App() {
     if (!loading && UI.scope && Store.real && Store.real.ready() && !rawData().clients[UI.scope]) UI.setScope('');
   }, [loading, data]);
   const board = useMemo(() => (loading ? null : buildBoard(data, { today: TODAY })), [data, TODAY, loading]);
+  useEffect(() => { if (!loading && Store.user && Store.user.mustChange && !UI.modal) UI.open('password', {}); }, [loading, Store.user && Store.user.mustChange]);
+  /* An admin without a team-list entry (e.g. the first admin) gets one, so their activity is signed with their name. */
+  useEffect(() => {
+    const u = Store.user;
+    if (loading || !u || u.memberId || u.role !== 'admin' || linkTried.current) return;
+    linkTried.current = true;
+    (async () => {
+      const team = rawData().settings.team || [];
+      const m = team.find(x => x.name.toLowerCase() === u.name.toLowerCase()) || await addPerson(u.name, ['manager', 'operator']);
+      if (!m) return;
+      const r = await api('PUT', 'users/' + u.id, { memberId: m.id });
+      if (r.ok) { u.memberId = m.id; pref('me', m.id); UI.set({ me: m.id }); }
+    })();
+  }, [loading, Store.user]);
   const counts = board ? board.counts : { open: 0 };
   let view;
   if (Store.mode === 'gate') return html`<div><${Gate} /><${Toasts} /></div>`;
+  if (Store.mode === 'setup') return html`<div><${SetupScreen} /><${Toasts} /></div>`;
+  if (Store.mode === 'offline') return html`<div><${OfflineScreen} /><${Toasts} /></div>`;
   if (loading) {
     view = html`<div class="boot"><div><div class="spinner"></div>${Store.mode === 'boot' ? 'Connecting…' : 'Loading your workspace…'}</div></div>`;
   } else if (UI.view === 'prospects') view = html`<${ProspectsView} />`;

@@ -107,7 +107,7 @@ function ProspectsView() {
     { divider: true },
     { label: 'Move to sequence…', icon: 'route', onSelect: () => UI.open('changeSeq', { ps: selected }) },
     { label: 'Add to a list…', icon: 'list', onSelect: () => UI.open('setList', { ps: selected }) },
-    { label: 'Delete…', icon: 'trash', danger: true, onSelect: () => UI.open('confirm', {
+    !can('delete') ? null : { label: 'Delete…', icon: 'trash', danger: true, onSelect: () => UI.open('confirm', {
       title: 'Delete ' + plural(selected.length, 'prospect') + '?', danger: true, confirmLabel: 'Delete',
       body: 'Their history is removed from reports too. You can undo right after.',
       onConfirm: async () => { await Act.bulkDelete(selected); clearSel(); } }) },
@@ -125,8 +125,8 @@ function ProspectsView() {
       <div class="head-actions">
         <${HelpButton} view="prospects" />
         <button type="button" class="btn" disabled=${!rows.length} onClick=${() => saveFile('prospects-' + TODAY + '.csv', prospectsCSV(rows, data))}><${Icon} n="download" s=${14} />Export CSV</button>
-        <button type="button" class="btn" disabled=${noClients} onClick=${() => UI.open('bulk', { clientId: f.clientId })}><${Icon} n="upload" s=${14} />Add in bulk</button>
-        <button type="button" class="btn primary" disabled=${noClients} onClick=${() => UI.open('addProspect', { clientId: f.clientId })}><${Icon} n="plus" s=${14} />Add prospect</button>
+        ${can('write') && html`<button type="button" class="btn" disabled=${noClients} onClick=${() => UI.open('bulk', { clientId: f.clientId })}><${Icon} n="upload" s=${14} />Add in bulk</button>
+        <button type="button" class="btn primary" disabled=${noClients} onClick=${() => UI.open('addProspect', { clientId: f.clientId })}><${Icon} n="plus" s=${14} />Add prospect</button>`}
       </div>
     </header>
 
@@ -455,7 +455,7 @@ function ProspectDrawer({ cid, pid }) {
             (STATUSES[p.status] || {}).open && p.status !== 'paused' ? { label: 'Pause', icon: 'pause', onSelect: () => Act.pause(p) } : null,
             p.status === 'paused' ? { label: 'Resume', icon: 'play', onSelect: () => Act.resume(p) } : null,
             { divider: true },
-            { label: 'Delete prospect…', icon: 'trash', danger: true, onSelect: () => UI.open('confirm', { title: 'Delete ' + fullName(p) + '?', danger: true, confirmLabel: 'Delete', body: 'Their activity history goes too. You can undo right after.', onConfirm: () => Act.remove(p) }) },
+            !can('delete', p.clientId) ? null : { label: 'Delete prospect…', icon: 'trash', danger: true, onSelect: () => UI.open('confirm', { title: 'Delete ' + fullName(p) + '?', danger: true, confirmLabel: 'Delete', body: 'Their activity history goes too. You can undo right after.', onConfirm: () => Act.remove(p) }) },
           ]} />
         </div>
       </div>

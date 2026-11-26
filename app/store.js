@@ -98,11 +98,10 @@ function LocalBackend(opts) {
   };
 }
 
-/* Shared storage on the Cloudflare site (Pages Function + D1), protected by the team passcode.
+/* Shared storage on the Cloudflare site (Pages Function + D1), behind personal logins (session cookie).
    Keeps a local copy, writes through to the server, and polls for teammates' changes. */
 function HttpBackend(opts) {
   const base = opts.base || '/api/';
-  const key = opts.key;
   const docs = {};
   const ver = {};
   const pending = new Map();
@@ -115,9 +114,10 @@ function HttpBackend(opts) {
   async function api(method, route, body) {
     let r;
     try {
-      r = await fetch(base + route, { method, cache: 'no-store', headers: { 'x-workspace-key': key, 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
+      r = await fetch(base + route, { method, cache: 'no-store', credentials: 'same-origin', headers: { 'x-od': '1', 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
     } catch (e) { throw { code: 'unavailable', message: 'Network error' }; }
-    if (r.status === 401) { if (opts.onAuthFail) opts.onAuthFail(); throw { code: 'invalid_argument', message: 'Wrong passcode' }; }
+    if (r.status === 401) { if (opts.onAuthFail) opts.onAuthFail(); throw { code: 'invalid_argument', message: 'Signed out' }; }
+    if (r.status === 403) throw { code: 'permission_denied', message: 'Not allowed' };
     if (r.status === 413) throw { code: 'quota_exceeded', message: 'Too large' };
     if (!r.ok) throw { code: r.status >= 500 ? 'unavailable' : 'invalid_argument', message: 'HTTP ' + r.status };
     return r.json();
@@ -142,10 +142,10 @@ function HttpBackend(opts) {
         while (more) {
           const res = await api('GET', 'sync?since=' + cursor);
           apply(res.docs).forEach(c => touched.add(c));
-          const top = res.docs.reduce((m, d) => Math.max(m, d.updated), cursor);
+          const top = Math.max(res.top || 0, res.docs.reduce((m, d) => Math.max(m, d.updated), cursor));
           since = Math.max(since, top);
+          more = !!res.more && top > cursor;
           cursor = top;
-          more = !!res.more && res.docs.length > 0;
         }
         const first = !loaded;
         loaded = true;
@@ -266,7 +266,8 @@ function Dataset(backend, onChange) {
 
 /* ---------- app-level store ---------- */
 const Store = {
-  mode: 'boot',            // 'boot' | 'cloud' (Claude link) | 'server' (Cloudflare D1) | 'gate' (needs passcode) | 'local'
+  mode: 'boot',            // 'boot' | 'cloud' (Claude link) | 'server' (Cloudflare D1) | 'gate' (sign in) | 'setup' (first admin) | 'offline' | 'local' (development only)
+  user: null,              // the signed-in user on the Cloudflare site
   sync: { state: 'ok' },
   localPending: null,
   uploadProgress: null,
@@ -404,25 +405,67 @@ async function probeServer() {
     return j && j.app === 'fastex-outreach-desk' ? j : null;
   } catch (e) { return null; }
 }
-/* Checks a passcode against the server without loading anything. */
-async function checkPasscode(key) {
+/* ---------- sign-in (Cloudflare site) ---------- */
+async function api(method, route, body) {
+  let r;
   try {
-    const r = await fetch('/api/sync?since=' + (Date.now() + 86400000), { cache: 'no-store', headers: { 'x-workspace-key': key } });
-    if (r.status === 401) return 'wrong';
-    if (!r.ok) return 'down';
-    return 'ok';
-  } catch (e) { return 'down'; }
+    r = await fetch('/api/' + route, { method, cache: 'no-store', credentials: 'same-origin', headers: { 'x-od': '1', 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
+  } catch (e) { return { ok: false, status: 0, error: 'network' }; }
+  let j = {};
+  try { j = await r.json(); } catch (e) { /* empty */ }
+  return Object.assign({ ok: r.ok, status: r.status }, j);
 }
-function connectServer(key) {
+const AUTH_ERRORS = {
+  network: 'Could not reach the desk. Check your internet connection and try again.',
+  bad_login: 'That email or password is not right.',
+  inactive: 'This account is turned off. Ask your admin.',
+  too_many_tries: 'Too many tries. Wait 15 minutes and try again.',
+  bad_code: 'That setup code is not right.',
+  weak_password: 'Use a password of at least 8 characters.',
+  bad_details: 'Enter a name and a valid email address.',
+  email_taken: 'Someone already uses that email.',
+  bad_password: 'Your current password is not right.',
+  last_admin: 'There must always be at least one active admin.',
+  self: 'You can\'t do that to your own account.',
+  forbidden: 'Only admins can do that.',
+};
+const authError = r => AUTH_ERRORS[r.error] || (r.status ? 'Something went wrong (' + r.status + '). Try again.' : AUTH_ERRORS.network);
+async function signIn(email, password) {
+  const r = await api('POST', 'auth/login', { email, password });
+  if (!r.ok) return authError(r);
+  connectServer(r.user);
+  return '';
+}
+async function setupAdmin(fields) {
+  const r = await api('POST', 'auth/setup', fields);
+  if (!r.ok) return authError(r);
+  connectServer(r.user);
+  return '';
+}
+async function signOut(message) {
+  await api('POST', 'auth/logout');
+  if (Store.real) Store.real.stop();
+  Store.real = null;
+  Store.user = null;
+  Store.mode = 'gate';
+  Store.gateError = message || '';
+  bump();
+}
+function connectServer(user) {
   if (Store.real) Store.real.stop();
   Store.mode = 'server';
+  Store.user = user;
+  Store.readOnly = user.role === 'viewer';
   Store.decided = false;
-  const backend = HttpBackend({ base: '/api/', key, onAuthFail: () => {
-    pref('workspaceKey', null);
+  pref('workspaceKey', null);
+  pref('forceLocal', null);
+  if (user.memberId) { pref('me', user.memberId); if (typeof UI !== 'undefined') UI.me = user.memberId; }
+  const backend = HttpBackend({ base: '/api/', onAuthFail: () => {
     if (Store.real) Store.real.stop();
     Store.real = null;
+    Store.user = null;
     Store.mode = 'gate';
-    Store.gateError = 'The team passcode has changed. Enter the new one.';
+    Store.gateError = 'You were signed out. Sign in again.';
     bump();
   } });
   Store.real = Dataset(backend, onDatasetChange);
@@ -468,14 +511,7 @@ async function uploadLocalData() {
   await ds.backend.sync();
   UI.toast('Uploaded ' + plural(done, 'record') + ' to the shared workspace' + (skipped ? ' (' + skipped + ' were already there)' : '') + '.');
 }
-function forgetPasscode() {
-  pref('workspaceKey', null);
-  if (Store.real) Store.real.stop();
-  Store.real = null;
-  Store.mode = 'gate';
-  Store.gateError = '';
-  bump();
-}
+function forgetPasscode() { return signOut(); }
 
 async function bootStore() {
   const db = await capability('db');
@@ -492,14 +528,18 @@ async function bootStore() {
   }
   const st = await probeServer();
   Store.serverInfo = st;
-  if (st && st.configured && !pref('forceLocal')) {
-    const key = pref('workspaceKey');
-    if (key) { connectServer(key); return; }
+  if (st && st.configured) {
+    if (st.needsSetup) { Store.mode = 'setup'; bump(); return; }
+    const r = await api('GET', 'auth/me');
+    if (r.ok && r.user) { connectServer(r.user); return; }
     Store.mode = 'gate';
     bump();
     return;
   }
-  startLocal();
+  /* Data lives only in the shared workspace. A browser-only copy is used just for local development. */
+  if (/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname) || location.protocol === 'file:') { startLocal(); return; }
+  Store.mode = 'offline';
+  bump();
 }
 
 /* ---------- writes ---------- */
@@ -507,7 +547,9 @@ function stripDoc(doc) { const d = JSON.parse(JSON.stringify(doc)); delete d.id;
 function prospectPath(p) { return 'clients/' + p.clientId + '/prospects/' + p.id; }
 function handleWriteError(e) {
   const c = errCode(e);
-  if (Store.mode === 'server' && c === 'unavailable') {
+  if (c === 'permission_denied') {
+    UI.toast('Your role doesn\'t allow that change. Ask an admin if you need it.', { bad: true });
+  } else if (Store.mode === 'server' && c === 'unavailable') {
     UI.toast('Could not reach the shared workspace. Check your internet connection; nothing was saved for that change.', { bad: true });
   } else if (c === 'invalid_argument' && Store.mode === 'cloud' && !Store.demoOn) {
     Store.readOnly = true;

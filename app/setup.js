@@ -71,12 +71,12 @@ function ClientCard({ c, data, usage, board }) {
       <button type="button" class="btn sm" onClick=${() => UI.go('prospects', { prospectFilter: Object.assign({}, UI.prospectFilter, { clientId: c.id, senderId: '', status: '' }) })}><${Icon} n="users" s=${14} />Prospects</button>
       <button type="button" class="btn sm" onClick=${() => UI.open('bulk', { clientId: c.id })}><${Icon} n="upload" s=${14} />Add prospects</button>
       <span style="flex:1"></span>
-      <button type="button" class="btn sm" onClick=${() => UI.open('client', { id: c.id })}><${Icon} n="edit" s=${14} />Edit</button>
+      ${can('clients', c.id) && html`<button type="button" class="btn sm" onClick=${() => UI.open('client', { id: c.id })}><${Icon} n="edit" s=${14} />Edit</button>`}
       <${Menu} icon="more" items=${[
         c.status === 'paused' ? { label: 'Resume client', icon: 'play', onSelect: () => setStatus('active') } : c.status !== 'archived' ? { label: 'Pause client', icon: 'pause', onSelect: () => setStatus('paused') } : null,
         c.status === 'archived' ? { label: 'Restore client', icon: 'undo', onSelect: () => setStatus('active') } : { label: 'Archive client', icon: 'inbox', onSelect: () => setStatus('archived') },
         { divider: true },
-        { label: 'Delete client and prospects…', icon: 'trash', danger: true, onSelect: () => UI.open('confirm', {
+        !can('clients', c.id) ? null : { label: 'Delete client and prospects…', icon: 'trash', danger: true, onSelect: () => UI.open('confirm', {
           title: 'Delete ' + c.name + '?', danger: true, typed: 'DELETE', confirmLabel: 'Delete for good',
           body: 'This removes the client and all ' + plural(ps.length, 'prospect') + ' with their history. Archive instead if you might need the numbers later.',
           onConfirm: async () => {
@@ -108,8 +108,8 @@ function ClientsView() {
         <p class="lede">The companies you run outreach for and the LinkedIn accounts you send from.</p></div>
       <div class="head-actions">
         <${HelpButton} view="clients" />
-        <button type="button" class="btn" onClick=${() => UI.open('people', {})}><${Icon} n="users" s=${14} />Account managers</button>
-        <button type="button" class="btn primary" onClick=${() => UI.open('client', {})}><${Icon} n="plus" s=${14} />Add client</button></div>
+        ${can('settings') && html`<button type="button" class="btn" onClick=${() => UI.open('people', {})}><${Icon} n="users" s=${14} />Account managers</button>`}
+        ${can('newClient') && html`<button type="button" class="btn primary" onClick=${() => UI.open('client', {})}><${Icon} n="plus" s=${14} />Add client</button>`}</div>
     </header>
     ${all.length > 3 && html`<div class="toolbar"><${SearchBox} id="client-search" value=${cq} placeholder="Search client, LinkedIn account or list…" onInput=${setCq} /></div>`}
     ${cn && live.length === 0 ? html`<div class="panel"><${Empty} icon="search" title="No clients match">Nothing matches “${cq.trim()}”.</${Empty}></div>`
@@ -360,6 +360,12 @@ function SequenceEditor({ seq, data }) {
     if (await W.saveSequence(Object.assign({}, seq, { archived: !seq.archived, updatedAt: nowTs() }))) UI.toast(seq.archived ? 'Sequence restored.' : 'Sequence archived. People already in it keep going.');
   };
   const del = () => UI.open('confirm', { title: 'Delete ' + seq.name + '?', danger: true, confirmLabel: 'Delete', body: 'Nobody uses this sequence, so it is safe to delete.', onConfirm: async () => { if (await W.deleteSequence(seq)) { UI.set({ seqSelected: null }); UI.toast('Sequence deleted.'); } } });
+  if (!can('sequences', seq.clientId || null)) {
+    return html`<div class="stack-lg"><div class="note-box"><${Icon} n="lock" s=${14} /> View only. Your role can't change sequences; ask a manager or admin.</div>
+      <fieldset class="readonly-set" disabled>${editorBody()}</fieldset></div>`;
+  }
+  return editorBody();
+  function editorBody() {
   return html`<div class="stack-lg">
     <div class="panel panel-pad stack">
       <div class="seq-summary">
@@ -405,6 +411,7 @@ function SequenceEditor({ seq, data }) {
         : html`<button type="button" class="btn sm danger" onClick=${del}><${Icon} n="trash" s=${14} />Delete</button>`}
     </div>
   </div>`;
+  }
 }
 
 const SEQ_PRESETS = [['standard', 'Standard 4-step (3 / 5 / 7 days)'], ['warmup', 'Warm-up first (visit, engage, invite)'], ['short', 'Short: 2 messages'], ['blank', 'Blank']];
@@ -662,6 +669,143 @@ function ImportFileModal({ obj, fileName }) {
   <//>`;
 }
 
+/* ---------- users & access (admins) ---------- */
+function tempPassword() {
+  const abc = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+  const r = crypto.getRandomValues(new Uint8Array(12));
+  return Array.from(r, x => abc[x % abc.length]).join('');
+}
+function showTempPassword(user, pw) {
+  UI.open('text', { title: 'Temporary password for ' + user.name, sub: 'Send this to them privately. They\'ll be asked to choose their own password when they sign in. It won\'t be shown again.',
+    text: 'Outreach Desk: https://outreach.fastexmedia.com\nEmail: ' + user.email + '\nTemporary password: ' + pw });
+}
+const Users = { list: null, loading: false, error: '' };
+async function loadUsers() {
+  Users.loading = true; bump();
+  const r = await api('GET', 'users');
+  Users.loading = false;
+  if (r.ok) { Users.list = r.users; Users.error = ''; } else Users.error = authError(r);
+  bump();
+}
+function accessText(u, data) {
+  if (u.role === 'admin' || !u.clients) return 'All clients';
+  const names = u.clients.map(id => (data.clients[id] || {}).name).filter(Boolean);
+  return names.length ? names.join(', ') : 'No clients';
+}
+function UsersPanel() {
+  const data = rawData();
+  useEffect(() => { if (!Users.list && !Users.loading) loadUsers(); }, []);
+  const list = Users.list || [];
+  const act = async (u, patch, msg) => {
+    const r = await api('PUT', 'users/' + u.id, patch);
+    if (!r.ok) { UI.toast(authError(r), { bad: true }); return false; }
+    await loadUsers(); if (msg) UI.toast(msg); return true;
+  };
+  const reset = u => UI.open('confirm', { title: 'Reset ' + u.name + '\'s password?', body: 'You\'ll get a temporary password to send them. Their current sessions end and they pick a new password at next sign-in.', confirmLabel: 'Reset password',
+    onConfirm: async () => { const pw = tempPassword(); if (await act(u, { password: pw })) showTempPassword(u, pw); } });
+  const remove = u => UI.open('confirm', { title: 'Delete ' + u.name + '?', danger: true, confirmLabel: 'Delete user', body: 'They can no longer sign in. Their past activity stays in the history. To pause access instead, turn the account off.',
+    onConfirm: async () => { const r = await api('DELETE', 'users/' + u.id); if (!r.ok) { UI.toast(authError(r), { bad: true }); return; } await loadUsers(); UI.toast(u.name + ' was deleted.'); } });
+  return html`<section class="panel">
+    <div class="panel-head"><h3>Users & access</h3><button type="button" class="btn sm primary" onClick=${() => UI.open('user', {})}><${Icon} n="plus" s=${14} />Add user</button></div>
+    <div class="panel-pad stack">
+      <p class="soft" style="font-size:13px">Everyone signs in with their own email and password. Their role decides what they can change, and client access decides which clients they can see at all.</p>
+      ${Users.error && html`<div class="note-box bad">${Users.error}</div>`}
+      ${Users.loading && !Users.list ? html`<p class="muted">Loading users…</p>` : html`<div class="user-list">
+        ${list.map(u => html`<div class="user-row" key=${u.id}>
+          <span class="me-av">${(u.name || '?').charAt(0).toUpperCase()}</span>
+          <div class="user-main">
+            <div><strong>${u.name}</strong>${Store.user && u.id === Store.user.id && html` <span class="muted">(you)</span>`} <span class="muted">${u.email}</span></div>
+            <div class="task-meta">
+              <span class=${'pill ' + (u.role === 'admin' ? 'tone-accent' : u.role === 'viewer' ? 'tone-muted' : 'tone-info')}>${ROLE_INFO[u.role].label}</span>
+              <span class="muted" style="font-size:12.5px">${accessText(u, data)}</span>
+              ${!u.active && html`<span class="pill tone-overdue">Turned off</span>`}
+              ${u.mustChange && u.active && html`<span class="pill tone-today">Temporary password</span>`}
+              <span class="muted" style="font-size:12px">${u.lastLogin ? 'Last sign-in ' + relDay(isoOf(new Date(u.lastLogin)), TODAY) : 'Never signed in'}</span>
+            </div>
+          </div>
+          <div class="btn-row" style="flex-wrap:nowrap">
+            <button type="button" class="btn sm" onClick=${() => UI.open('user', { u })}><${Icon} n="edit" s=${14} />Edit</button>
+            <${Menu} icon="more" title="More" items=${[
+              { label: 'Reset password…', icon: 'lock', onSelect: () => reset(u) },
+              Store.user && u.id !== Store.user.id ? { label: u.active ? 'Turn off (block sign-in)' : 'Turn back on', icon: u.active ? 'pause' : 'play', onSelect: () => act(u, { active: !u.active }, u.active ? u.name + ' can no longer sign in.' : u.name + ' can sign in again.') } : null,
+              Store.user && u.id !== Store.user.id ? { divider: true } : null,
+              Store.user && u.id !== Store.user.id ? { label: 'Delete user…', icon: 'trash', danger: true, onSelect: () => remove(u) } : null,
+            ]} />
+          </div>
+        </div>`)}
+      </div>`}
+      <details class="role-help"><summary>What each role can do</summary>
+        <ul class="tips">${Object.keys(ROLE_INFO).map(k => html`<li key=${k}><strong>${ROLE_INFO[k].label}:</strong> ${ROLE_INFO[k].desc}</li>`)}</ul></details>
+    </div>
+  </section>`;
+}
+function UserModal({ u }) {
+  const data = rawData();
+  const team = (data.settings.team || []).slice().sort((a, b) => byText(a.name, b.name));
+  const clients = Object.values(data.clients).sort((a, b) => byText(a.name, b.name));
+  const editing = !!u;
+  const self = editing && Store.user && u.id === Store.user.id;
+  const [v, setV] = useState(() => ({ name: u ? u.name : '', email: u ? u.email : '', role: u ? u.role : 'member',
+    all: u ? !u.clients : true, clients: u && u.clients ? u.clients.slice() : [], memberId: u ? (u.memberId || '') : '__new', password: editing ? '' : tempPassword() }));
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const set = (k, x) => setV(Object.assign({}, v, { [k]: x }));
+  const toggleClient = id => set('clients', v.clients.indexOf(id) === -1 ? v.clients.concat(id) : v.clients.filter(x => x !== id));
+  const save = async e => {
+    e.preventDefault();
+    if (!v.name.trim() || !v.email.trim()) { setErr('Enter a name and email.'); return; }
+    if (!editing && v.password.length < 8) { setErr('The temporary password needs at least 8 characters.'); return; }
+    setBusy(true); setErr('');
+    let memberId = v.memberId;
+    if (memberId === '__new') {
+      const existing = team.find(m => m.name.toLowerCase() === v.name.trim().toLowerCase());
+      const m = existing || await addPerson(v.name.trim(), v.role === 'viewer' ? ['manager'] : ['manager', 'operator']);
+      memberId = m ? m.id : '';
+    }
+    const body = { name: v.name.trim(), email: v.email.trim(), role: v.role, clients: v.role === 'admin' || v.all ? null : v.clients, memberId: memberId || null };
+    if (!editing) body.password = v.password;
+    const r = editing ? await api('PUT', 'users/' + u.id, body) : await api('POST', 'users', body);
+    setBusy(false);
+    if (!r.ok) { setErr(authError(r)); return; }
+    await loadUsers();
+    UI.close();
+    if (self && Store.user) { Object.assign(Store.user, r.user); bump(); }
+    if (!editing) showTempPassword(r.user, v.password); else UI.toast(r.user.name + ' updated.');
+  };
+  return html`<${Modal} title=${editing ? 'Edit ' + u.name : 'Add user'} size="wide" foot=${html`
+      <button type="button" class="btn" onClick=${() => UI.close()}>Cancel</button>
+      <button type="submit" form="user-form" class="btn primary" disabled=${busy}>${busy ? 'Saving…' : editing ? 'Save' : 'Add user'}</button>`}>
+    <form id="user-form" class="stack" onSubmit=${save}>
+      <div class="fields">
+        <label class="field"><span>Name</span><input id="u-name" class="input" data-autofocus value=${v.name} onInput=${e => set('name', e.target.value)} /></label>
+        <label class="field"><span>Email <span class="hint">they sign in with this</span></span><input id="u-email" class="input" type="email" value=${v.email} onInput=${e => set('email', e.target.value)} /></label>
+      </div>
+      <div class="field"><span>Role</span>
+        <div class="role-grid">${Object.keys(ROLE_INFO).map(k => html`<button type="button" key=${k} class="choice role-choice" aria-pressed=${v.role === k ? 'true' : 'false'} disabled=${self && k !== 'admin'} onClick=${() => set('role', k)}>
+          <strong>${ROLE_INFO[k].label}</strong><span>${ROLE_INFO[k].desc}</span></button>`)}</div>
+        ${self && html`<span class="hint">You can't change your own role.</span>`}</div>
+      ${v.role !== 'admin' && html`<div class="field"><span>Client access</span>
+        <div class="seg" role="group" aria-label="Client access">
+          <button type="button" aria-pressed=${v.all ? 'true' : 'false'} onClick=${() => set('all', true)}>All clients</button>
+          <button type="button" aria-pressed=${!v.all ? 'true' : 'false'} onClick=${() => set('all', false)}>Only selected clients</button>
+        </div>
+        ${!v.all && html`<div class="client-checks">${clients.map(c => html`<label class="check" key=${c.id}><input type="checkbox" checked=${v.clients.indexOf(c.id) !== -1} onChange=${() => toggleClient(c.id)} /><${ClientChip} client=${c} /></label>`)}</div>
+          <span class="hint">They won't see other clients at all: not on Today, Prospects, Activity or Reports.</span>`}
+      </div>`}
+      <label class="field"><span>Team member <span class="hint">their name on activity and account assignments</span></span>
+        <select id="u-member" class="select" value=${v.memberId} onChange=${e => set('memberId', e.target.value)}>
+          <option value="__new" selected=${v.memberId === '__new'}>Create "${v.name.trim() || 'their name'}" in the team list</option>
+          <option value="" selected=${v.memberId === ''}>Not linked</option>
+          ${team.map(m => html`<option key=${m.id} value=${m.id} selected=${v.memberId === m.id}>${m.name}</option>`)}
+        </select></label>
+      ${!editing && html`<label class="field"><span>Temporary password <span class="hint">they choose their own at first sign-in</span></span>
+        <div class="team-row"><input id="u-password" class="input mono" value=${v.password} onInput=${e => set('password', e.target.value)} />
+          <button type="button" class="btn" onClick=${() => set('password', tempPassword())}>New</button></div></label>`}
+      ${err && html`<div class="note-box bad">${err}</div>`}
+    </form>
+  <//>`;
+}
+
 function SettingsView() {
   const data = currentData();
   const s = data.settings;
@@ -672,14 +816,23 @@ function SettingsView() {
   const all = rawData();
   const docCount = 1 + Object.keys(all.clients).length + Object.keys(all.seqs).length + all.prospects.length;
   const onRestore = async e => { const f = e.target.files && e.target.files[0]; if (!f) return; restoreBackup(await readFileText(f), f.name); e.target.value = ''; };
-  const storage = Store.mode === 'server' ? 'Saved in your shared Cloudflare workspace. Everyone who opens the desk with the team passcode sees the same data; changes from teammates appear within a few seconds.'
+  const isAdmin = can('settings');
+  const storage = Store.mode === 'server' ? 'Saved in your shared Cloudflare workspace. Everyone signs in with their own account and sees the clients their access allows; changes from teammates appear within a few seconds.'
     : Store.mode === 'cloud' ? 'Saved in this page\'s shared storage. Everyone you share it with (with edit access) sees the same data, live.'
     : 'Saved in this browser only. Export a backup regularly, or open the published page to share with your team.';
   return html`<div class="page">
     <header class="page-head"><div><p class="eyebrow">${s.agencyName || 'Workspace'}</p><h1>Settings</h1></div><div class="head-actions"><${HelpButton} view="settings" /></div></header>
     <div class="settings-grid">
       <div class="stack-lg">
-        <section class="panel">
+        ${Store.user && isAdmin && html`<${UsersPanel} />`}
+        ${Store.user && html`<section class="panel"><div class="panel-head"><h3>Your account</h3></div>
+          <div class="panel-pad stack">
+            <p class="soft" style="font-size:13px"><strong>${Store.user.name}</strong> · ${Store.user.email} · ${ROLE_INFO[Store.user.role].label}${Store.user.clients ? ' · ' + accessText(Store.user, rawData()) : ''}</p>
+            <div class="btn-row"><button type="button" class="btn" onClick=${() => UI.open('password', {})}><${Icon} n="lock" s=${14} />Change password</button>
+              <button type="button" class="btn ghost" onClick=${() => signOut()}><${Icon} n="logout" s=${14} />Log out</button></div>
+          </div></section>`}
+        ${!isAdmin && html`<p class="muted" style="font-size:13px">Workspace settings (team, pacing, schedule) can only be changed by an admin.</p>`}
+        ${isAdmin && html`<section class="panel">
           <div class="panel-head"><h3>Workspace</h3></div>
           <div class="panel-pad stack">
             <label class="field"><span>Agency name</span>
@@ -691,9 +844,9 @@ function SettingsView() {
           <div class="panel-head"><h3>Account managers & team</h3><span class="muted" style="font-size:12.5px">The master list used across clients and LinkedIn accounts</span></div>
           <div class="panel-pad stack">
             <${PeopleEditor} />
-            <label class="field"><span>On this device, I am</span>
+            ${!Store.user && html`<label class="field"><span>On this device, I am</span>
               <${MemberSelect} id="set-me" settings=${s} value=${UI.me} noneLabel="Not set" onChange=${x => { pref('me', x || null); UI.set({ me: x }); }} />
-              <span class="hint">Signs the activity you log, and lets you filter Today to your accounts.</span></label>
+              <span class="hint">Signs the activity you log, and lets you filter Today to your accounts.</span></label>`}
           </div>
         </section>
         <section class="panel">
@@ -727,7 +880,7 @@ function SettingsView() {
             </div>
             <a class="btn" style="align-self:flex-start" href=${gcalRoutineLink(s)} target="_blank" rel="noopener noreferrer"><${Icon} n="calendar" s=${14} />Add weekday reminder to Google Calendar</a>
           </div>
-        </section>
+        </section>`}
       </div>
       <div class="stack-lg">
         <section class="panel">
@@ -738,14 +891,12 @@ function SettingsView() {
               <button type="button" class="btn" onClick=${() => saveFile('outreach-backup-' + TODAY + '.json', backupJSON(rawData()))}><${Icon} n="download" s=${14} />Export backup (JSON)</button>
               <button type="button" class="btn" disabled=${!data.prospects.length} onClick=${() => saveFile('prospects-' + TODAY + '.csv', prospectsCSV(data.prospects.map(p => ({ p, next: nextAction(p, data, TODAY) })), data))}><${Icon} n="download" s=${14} />Export prospects (CSV)</button>
             </div>
-            <label class="field"><span>Import a backup or prepared file <span class="hint">you see a preview before anything is saved</span></span>
-              <input id="set-restore" type="file" accept=".json,application/json" class="input" onChange=${onRestore} /></label>
+            ${isAdmin && html`<label class="field"><span>Import a backup or prepared file <span class="hint">you see a preview before anything is saved</span></span>
+              <input id="set-restore" type="file" accept=".json,application/json" class="input" onChange=${onRestore} /></label>`}
             ${Store.mode === 'cloud' && html`<p class="muted" style="font-size:12.5px">Shared storage holds up to about 25,000 records.</p>`}
-            ${Store.mode === 'server' && html`<div class="btn-row">
-              ${Object.keys(localDocs()).length > 0 && html`<button type="button" class="btn" onClick=${uploadLocalData}><${Icon} n="upload" s=${14} />Upload this browser's old data</button>`}
-              <button type="button" class="btn ghost" onClick=${() => UI.open('confirm', { title: 'Sign out on this browser?', body: 'The desk will ask for the team passcode again next time. Shared data is not affected.', confirmLabel: 'Sign out', onConfirm: forgetPasscode })}><${Icon} n="logout" s=${14} />Sign out on this browser</button>
+            ${Store.mode === 'server' && can('write') && Object.keys(localDocs()).length > 0 && html`<div class="btn-row">
+              <button type="button" class="btn" onClick=${uploadLocalData}><${Icon} n="upload" s=${14} />Upload this browser's old data</button>
             </div>`}
-            ${Store.mode === 'local' && Store.serverInfo && Store.serverInfo.configured && html`<button type="button" class="btn" onClick=${() => { pref('forceLocal', null); forgetPasscode(); }}><${Icon} n="users" s=${14} />Switch to the shared workspace</button>`}
           </div>
         </section>
         <section class="panel">
@@ -761,7 +912,7 @@ function SettingsView() {
             </ul>
           </div>
         </section>
-        ${!Store.demoOn && html`<section class="panel">
+        ${!Store.demoOn && isAdmin && html`<section class="panel">
           <div class="panel-head"><h3>Danger zone</h3></div>
           <div class="panel-pad stack">
             <p class="soft" style="font-size:13px">Delete every client, sequence and prospect in this workspace. Export a backup first.</p>

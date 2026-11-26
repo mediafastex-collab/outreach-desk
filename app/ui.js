@@ -43,7 +43,10 @@ const UI = {
     bump();
     try { window.scrollTo(0, 0); } catch (e) { /* ignore */ }
   },
-  open(type, props) { this.modal = { type, props: props || {}, n: ++modalCounter }; bump(); },
+  open(type, props) {
+    if (!modalAllowed(type, props || {})) { noPermission(); return; }
+    this.modal = { type, props: props || {}, n: ++modalCounter }; bump();
+  },
   close() { this.modal = null; bump(); },
   openProspect(p) { this.drawer = { cid: p.clientId, pid: p.id }; bump(); },
   closeDrawer() { this.drawer = null; bump(); },
@@ -101,6 +104,8 @@ const ICONS = {
   undo: '<polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>',
   alert: '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
   info: '<circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>',
+  lock: '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+  shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
   logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>',
   inbox: '<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
   link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
@@ -190,6 +195,74 @@ async function saveFile(filename, data) {
   }
   UI.open('text', { title: filename, text: data, sub: 'Downloads are not available here. Copy the contents instead.' });
 }
+/* ---------- roles and permissions (enforced again on the server) ---------- */
+const ROLE_INFO = {
+  admin: { label: 'Admin', desc: 'Everything, including users & access and workspace settings.' },
+  manager: { label: 'Manager', desc: 'Clients, sequences, lists, imports and deleting prospects.' },
+  member: { label: 'Member', desc: 'Works Today and Focus run, adds and edits prospects, logs activity. Can\'t delete.' },
+  viewer: { label: 'Viewer', desc: 'Read only: sees prospects, activity and reports.' },
+};
+const ROLE_RANK = { viewer: 0, member: 1, manager: 2, admin: 3 };
+/* What the signed-in user may do. Without sign-in (local development) everything is allowed. */
+function can(perm, clientId) {
+  const u = Store.user;
+  if (!u) return true;
+  const rank = ROLE_RANK[u.role] || 0;
+  const allClients = u.role === 'admin' || !u.clients;
+  const hasClient = !clientId || allClients || u.clients.indexOf(clientId) !== -1;
+  switch (perm) {
+    case 'users': case 'settings': return u.role === 'admin';
+    case 'newClient': return rank >= 2 && allClients;
+    case 'clients': case 'sequences': case 'delete': return rank >= 2 && hasClient;
+    case 'write': return rank >= 1 && hasClient;
+    default: return false;
+  }
+}
+/* Windows that change things, checked before they open (the server checks every save too). */
+function modalAllowed(type, p) {
+  switch (type) {
+    case 'client': return p.id ? can('clients', p.id) : can('newClient');
+    case 'newSeq': return can('sequences', p.clientId || null);
+    case 'people': case 'importFile': case 'user': return can('settings');
+    case 'lists': return can('clients', p.clientId);
+    case 'bulk': case 'addProspect': return can('write', p.clientId || null);
+    case 'changeSeq': case 'setList': return can('write');
+    default: return true;
+  }
+}
+const noPermission = () => UI.toast('Your role doesn\'t allow that. Ask an admin if you need it.', { bad: true });
+
+function PasswordModal() {
+  const [v, setV] = useState({ current: '', next: '', confirm: '' });
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const set = k => e => setV(Object.assign({}, v, { [k]: e.target.value }));
+  const ok = v.current && v.next.length >= 8 && v.next === v.confirm;
+  const submit = async e => {
+    e.preventDefault();
+    if (!ok) return;
+    setBusy(true); setErr('');
+    const r = await api('POST', 'auth/password', { current: v.current, next: v.next });
+    setBusy(false);
+    if (!r.ok) { setErr(authError(r)); return; }
+    if (Store.user) Store.user.mustChange = false;
+    UI.close();
+    UI.toast('Password changed. Other browsers signed in as you were signed out.');
+  };
+  const forced = Store.user && Store.user.mustChange;
+  return html`<${Modal} title=${forced ? 'Choose your own password' : 'Change password'} sub=${forced ? 'Your admin set a temporary password. Pick one only you know.' : ''} size="narrow" foot=${html`
+      ${!forced && html`<button type="button" class="btn" onClick=${() => UI.close()}>Cancel</button>`}
+      <button type="submit" form="pw-form" class="btn primary" disabled=${busy || !ok}>${busy ? 'Saving…' : 'Change password'}</button>`}>
+    <form id="pw-form" class="stack" onSubmit=${submit}>
+      <label class="field"><span>${forced ? 'Temporary password' : 'Current password'}</span><input id="pw-current" class="input" type="password" autocomplete="current-password" data-autofocus value=${v.current} onInput=${set('current')} /></label>
+      <label class="field"><span>New password <span class="hint">at least 8 characters</span></span><input id="pw-next" class="input" type="password" autocomplete="new-password" value=${v.next} onInput=${set('next')} /></label>
+      <label class="field"><span>Repeat new password</span><input id="pw-confirm" class="input" type="password" autocomplete="new-password" value=${v.confirm} onInput=${set('confirm')} /></label>
+      ${v.confirm && v.next !== v.confirm && html`<div class="note-box warn">The new passwords don't match.</div>`}
+      ${err && html`<div class="note-box bad">${err}</div>`}
+    </form>
+  <//>`;
+}
+
 /* Search box used across the desk. */
 function SearchBox({ id, value, onInput, placeholder, grow }) {
   return html`<label class=${'search' + (grow ? ' grow' : '')} style=${grow ? undefined : 'min-width:220px'}><${Icon} n="search" s=${15} /><span class="sr">${placeholder || 'Search'}</span>

@@ -9,14 +9,14 @@ A tracker for manual LinkedIn outreach across many clients. It never sends anyth
 
 **Shared (recommended):** use the published link. Data lives in the page's shared storage, so everyone you give edit access sees the same workspace live.
 
-**Shared team storage on Cloudflare (one-time setup):** the site includes a small API in `functions/api/` that stores everything in a Cloudflare D1 database, protected by a team passcode.
+**Shared team storage on Cloudflare (one-time setup):** the site includes a small API in `functions/api/` that stores everything in a Cloudflare D1 database, behind personal logins (email + password, with roles and client access).
 
 1. Cloudflare dashboard → **Storage & Databases → D1 SQL Database → Create** → name it `outreach-desk-db`.
 2. **Workers & Pages → outreach-desk → Settings → Bindings → Add → D1 database**: variable name `DB`, database `outreach-desk-db`.
-3. Same page → **Variables and Secrets → Add**: type **Secret**, name `WORKSPACE_KEY`, value = your team passcode (8+ characters).
+3. Same page → **Variables and Secrets → Add**: type **Secret**, name `WORKSPACE_KEY`, value = a one-time setup code (8+ characters). It is only used to create the first admin account.
 4. **Deployments → latest → Retry deployment.**
 
-Then open the site, enter the passcode once per browser, and use **Upload to shared workspace** in any browser that has older data. Until the setup is done the site keeps saving in each browser.
+Then open the site and create the first admin with that setup code. Add the team in **Settings → Users & access** (roles: Admin, Manager, Member, Viewer; each user can be limited to chosen clients). Optional: secret `ADMIN_WHATSAPP` puts a WhatsApp button on the login screen for forgotten passwords. Data is only stored in the shared workspace; browsers keep no copy of their own.
 
 **Locally:** serve the `app` folder and open it in a browser. Data is saved in that browser only.
 
@@ -50,7 +50,7 @@ Default sequence: connection request → Message 1 when they accept → Message 
 | File | What it holds |
 |---|---|
 | `engine.js` | Dates, cadence rules, the daily queue, analytics, CSV |
-| `store.js` | Storage: Cloudflare shared workspace (with passcode and sync), Claude link storage, and browser-only fallback |
+| `store.js` | Storage and sign-in: Cloudflare shared workspace (personal logins, sync), Claude link storage, browser-only mode for local development |
 | `functions/api/[[path]].js` | Cloudflare Pages Function: the shared-storage API on D1 |
 | `today.js` | Today screen, acceptance check, focus run, reply dialogs |
 | `prospects.js` | Prospect list, detail panel, add and bulk import |
