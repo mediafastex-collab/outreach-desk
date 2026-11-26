@@ -102,6 +102,7 @@ function Rail({ counts }) {
         <${MemberSelect} id="rail-me" cls="select sm" settings=${data.settings} value=${UI.me} noneLabel="Pick your name" onChange=${x => { pref('me', x || null); UI.set({ me: x }); }} />`
         : html`<button type="button" class="btn sm" onClick=${() => UI.go('settings')}><${Icon} n="users" s=${14} />Add your team</button>`}
       <${SyncStatus} />
+      ${Store.mode === 'server' && html`<button type="button" id="rail-logout" class="btn sm ghost" onClick=${() => UI.open('confirm', { title: 'Log out?', body: 'This browser will ask for the team passcode again. Everyone\'s data stays saved in the shared workspace.', confirmLabel: 'Log out', onConfirm: () => { pref('me', null); UI.set({ me: '' }); forgetPasscode(); } })}><${Icon} n="logout" s=${14} />Log out</button>`}
     </div>
   </nav>`;
 }
