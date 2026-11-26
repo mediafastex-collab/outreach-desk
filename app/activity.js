@@ -8,12 +8,14 @@ function ActivityView() {
   const setF = patch => { UI.set({ activityFilter: Object.assign({}, f, patch) }); setLimit(150); };
   const [limit, setLimit] = useState(150);
   const range = periodRange(f.period, TODAY, f);
+  const aq = needleOf(f.q);
   const inR = on => (!range.from || on >= range.from) && on <= (range.to || TODAY);
   const entries = useMemo(() => {
     const out = [];
     for (const p of data.prospects) {
       if (f.clientId && p.clientId !== f.clientId) continue;
       if (f.clientId && f.listId && (f.listId === '_none' ? p.listId : p.listId !== f.listId)) continue;
+      if (aq && haystack(p).indexOf(aq) === -1) continue;
       for (const e of p.log || []) {
         if (!inR(e.on)) continue;
         if (f.memberId && e.by !== f.memberId) continue;
@@ -22,7 +24,7 @@ function ActivityView() {
     }
     out.sort((a, b) => (a.ts < b.ts ? 1 : a.ts > b.ts ? -1 : 0));
     return out;
-  }, [data, f.clientId, f.listId, f.memberId, f.period, f.from, f.to, TODAY]);
+  }, [data, f.clientId, f.listId, f.memberId, f.period, f.from, f.to, aq, TODAY]);
   const byKind = {};
   entries.forEach(x => { byKind[x.kind] = (byKind[x.kind] || 0) + 1; });
   const shown = f.kind ? entries.filter(x => x.kind === f.kind) : entries;
@@ -43,6 +45,7 @@ function ActivityView() {
       <div class="head-actions"><${HelpButton} view="activity" /><button type="button" class="btn" disabled=${!shown.length} onClick=${exportCSV}><${Icon} n="download" s=${14} />Export CSV</button></div>
     </header>
     <div class="toolbar">
+      <${SearchBox} id="act-search" value=${f.q} placeholder="Search name or company…" onInput=${v => setF({ q: v })} />
       <${PeriodFilter} id="act-period" value=${f} onChange=${v => setF(v)} title="When the activity happened" />
       ${!UI.scope && html`<${ClientSelect} id="act-client" cls="select sm" data=${data} value=${f.clientId} all=${true} includeInactive=${true} onChange=${v => setF({ clientId: v, listId: '' })} />`}
       ${f.clientId && listsOf(data, f.clientId).length > 0 && html`<${ListSelect} id="act-list" cls="select sm" data=${data} clientId=${f.clientId} value=${f.listId} allLabel="All lists" onChange=${v => setF({ listId: v })} />`}

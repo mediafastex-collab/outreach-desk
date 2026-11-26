@@ -13,9 +13,9 @@ const UI = {
   drawer: null,
   modal: null,
   toasts: [],
-  todayFilter: { clientId: '', operatorId: '', group: 'all', listId: '' },
+  todayFilter: { clientId: '', operatorId: '', group: 'all', listId: '', q: '' },
   prospectFilter: { q: '', clientId: '', senderId: '', status: '', sequenceId: '', tag: '', sort: 'next', listId: '', potential: '', country: '', needs: false },
-  activityFilter: { period: '7d', from: '', to: '', clientId: '', listId: '', memberId: '', kind: '' },
+  activityFilter: { period: '7d', from: '', to: '', clientId: '', listId: '', memberId: '', kind: '', q: '' },
   seqScope: '',
   reportFilter: { clientId: '', period: 'month', from: '', to: '' },
   /* Shared by Today, Focus run and Prospects: only people added in this period. */
@@ -190,6 +190,13 @@ async function saveFile(filename, data) {
   }
   UI.open('text', { title: filename, text: data, sub: 'Downloads are not available here. Copy the contents instead.' });
 }
+/* Search box used across the desk. */
+function SearchBox({ id, value, onInput, placeholder, grow }) {
+  return html`<label class=${'search' + (grow ? ' grow' : '')} style=${grow ? undefined : 'min-width:220px'}><${Icon} n="search" s=${15} /><span class="sr">${placeholder || 'Search'}</span>
+    <input id=${id} class="input" type="search" placeholder=${placeholder || 'Search…'} value=${value || ''} onInput=${e => onInput(e.target.value)} /></label>`;
+}
+const needleOf = q => String(q || '').trim().toLowerCase();
+
 function readFileText(file) {
   return new Promise((resolve, reject) => {
     const r = new FileReader();

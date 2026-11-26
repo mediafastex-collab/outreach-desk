@@ -2,9 +2,6 @@
    Prospect list, detail drawer, and the add / bulk-add / change-sequence dialogs. */
 'use strict';
 
-function haystack(p) {
-  return [p.firstName, p.lastName, p.company, p.title, p.position, p.location, p.email, p.url, (p.tags || []).join(' '), p.notes].join(' ').toLowerCase();
-}
 function StepDots({ p, seq }) {
   if (!seq) return html`<span class="pill tone-overdue">No sequence</span>`;
   const cur = stepIndexOf(p, seq);

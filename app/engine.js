@@ -850,6 +850,11 @@ function newProspect(f, ctx) {
   return p;
 }
 
+/* Everything searchable about a prospect, lower-case (name, company, headline, position, location, email, URL, tags, notes). */
+function haystack(p) {
+  return [p.firstName, p.lastName, p.company, p.title, p.position, p.location, p.email, p.url, (p.tags || []).join(' '), p.notes].join(' ').toLowerCase();
+}
+
 /* ---------- the daily queue ---------- */
 function stepDue(p, seq, i, settings) {
   const step = seq.steps[i];
@@ -968,6 +973,7 @@ function buildBoard(data, opts) {
     const sender = senderOf(client, p);
     if (opts.operatorId && operatorOf(client, sender) !== opts.operatorId) continue;
     if (opts.added && !inPeriod(addedOnOf(p), opts.added)) continue;
+    if (opts.q && haystack(p).indexOf(opts.q) === -1) continue;
     for (const e of p.log || []) if (e.on === t && DONE_KINDS[e.kind]) doneToday++;
     if (client.status && client.status !== 'active') { hiddenClients.add(client.id); continue; }
     for (const task of prospectTasks(p, ctx)) {

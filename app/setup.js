@@ -93,9 +93,12 @@ function ClientCard({ c, data, usage, board }) {
 function ClientsView() {
   const data = currentData();
   const [showArchived, setShowArchived] = useState(false);
+  const [cq, setCq] = useState('');
   const usage = useMemo(() => senderUsage(data.prospects, TODAY), [data, TODAY]);
   const board = useMemo(() => buildBoard(data, { today: TODAY }), [data, TODAY]);
-  const list = Object.values(data.clients).sort((a, b) => byText(a.name, b.name));
+  const cn = needleOf(cq);
+  const all = Object.values(data.clients).sort((a, b) => byText(a.name, b.name));
+  const list = cn ? all.filter(c => [c.name, c.notes].concat((c.senders || []).map(s => s.name), (c.lists || []).map(l => l.name)).join(' ').toLowerCase().indexOf(cn) !== -1) : all;
   const live = list.filter(c => c.status !== 'archived');
   const archived = list.filter(c => c.status === 'archived');
   const senders = live.reduce((n, c) => n + (c.senders || []).length, 0);
@@ -108,7 +111,9 @@ function ClientsView() {
         <button type="button" class="btn" onClick=${() => UI.open('people', {})}><${Icon} n="users" s=${14} />Account managers</button>
         <button type="button" class="btn primary" onClick=${() => UI.open('client', {})}><${Icon} n="plus" s=${14} />Add client</button></div>
     </header>
-    ${live.length === 0 ? html`<div class="panel"><${Empty} icon="briefcase" title="No clients yet"
+    ${all.length > 3 && html`<div class="toolbar"><${SearchBox} id="client-search" value=${cq} placeholder="Search client, LinkedIn account or list…" onInput=${setCq} /></div>`}
+    ${cn && live.length === 0 ? html`<div class="panel"><${Empty} icon="search" title="No clients match">Nothing matches “${cq.trim()}”.</${Empty}></div>`
+    : live.length === 0 ? html`<div class="panel"><${Empty} icon="briefcase" title="No clients yet"
         action=${html`<button type="button" class="btn primary" onClick=${() => UI.open('client', {})}><${Icon} n="plus" s=${14} />Add client</button>`}>
         Add the companies you run outreach for, with the LinkedIn account (or accounts) you send from.</${Empty}></div>`
       : html`<div class="client-grid">${live.map(c => html`<${ClientCard} key=${c.id} c=${c} data=${data} usage=${usage} board=${board} />`)}</div>`}
@@ -455,8 +460,10 @@ function NewSequenceModal({ clientId }) {
 function SequencesView() {
   const data = currentData();
   const [scope, setScope] = useState(UI.seqScope || '');
+  const [sq, setSq] = useState('');
+  const sn = needleOf(sq);
   const all = Object.values(data.seqs).sort((a, b) => (a.archived === b.archived ? byText(a.name, b.name) : a.archived ? 1 : -1));
-  const list = all.filter(s => !scope || (scope === '_shared' ? !s.clientId : s.clientId === scope));
+  const list = all.filter(s => (!scope || (scope === '_shared' ? !s.clientId : s.clientId === scope)) && (!sn || [s.name, s.description, (data.clients[s.clientId] || {}).name].join(' ').toLowerCase().indexOf(sn) !== -1));
   const counts = {};
   data.prospects.forEach(p => { if (['queued', 'active', 'invited'].indexOf(p.status) !== -1) counts[p.sequenceId] = (counts[p.sequenceId] || 0) + 1; });
   const mostUsed = list.filter(s => !s.archived).slice().sort((a, b) => (counts[b.id] || 0) - (counts[a.id] || 0))[0];
@@ -479,6 +486,7 @@ function SequencesView() {
       <div class="head-actions"><${HelpButton} view="sequences" /><button type="button" class="btn primary" onClick=${() => UI.open('newSeq', { clientId: scope && scope[0] !== '_' ? scope : '' })}><${Icon} n="plus" s=${14} />New sequence</button></div>
     </header>
     <div class="toolbar">
+      <${SearchBox} id="seq-search" value=${sq} placeholder="Search sequences…" onInput=${setSq} />
       <select id="seq-scope-filter" class="select sm" value=${scope} onChange=${e => setScopeP(e.target.value)} aria-label="Show sequences for">
         <option value="" selected=${!scope}>All sequences</option>
         <option value="_shared" selected=${scope === '_shared'}>Shared templates</option>
