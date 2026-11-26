@@ -152,6 +152,8 @@ function Gate() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(Store.gateError || '');
   const n = Object.keys(localDocs()).length;
+  const [forgot, setForgot] = useState(false);
+  const wa = Store.serverInfo && Store.serverInfo.adminWhatsapp;
   const submit = async e => {
     e.preventDefault();
     const k = key.trim();
@@ -175,7 +177,12 @@ function Gate() {
         <input id="gate-key" class="input" type="password" autocomplete="current-password" data-autofocus autofocus value=${key} onInput=${ev => setKey(ev.target.value)} /></label>
       ${err && html`<div class="note-box bad">${err}</div>`}
       <button type="submit" class="btn primary" disabled=${busy || !key.trim()}>${busy ? 'Checking…' : 'Open shared workspace'}</button>
-      <p class="muted" style="font-size:12.5px">Don't have it? Ask the person who set up the desk. The passcode is set in Cloudflare, not here.</p>
+      ${!forgot ? html`<button type="button" class="linkish" style="font-size:13px;align-self:flex-start" onClick=${() => setForgot(true)}>Forgot passcode?</button>`
+        : html`<div class="note-box">
+          <p style="margin-bottom:8px"><strong>Forgot the passcode?</strong> The whole team shares one passcode, set by your workspace admin. Ask them for it, or ask them to set a new one.</p>
+          ${wa ? html`<a class="btn sm primary" href=${'https://wa.me/' + wa + '?text=' + encodeURIComponent('Hi, I need the Outreach Desk team passcode (outreach.fastexmedia.com). Can you send it or reset it?')} target="_blank" rel="noopener noreferrer"><${Icon} n="send" s=${14} />Message the admin on WhatsApp</a>`
+            : html`<p class="muted" style="font-size:12.5px">Message whoever set up the desk for your team.</p>`}
+        </div>`}
       ${n > 0 && html`<p class="muted" style="font-size:12.5px">This browser also has ${plural(n, 'record')} saved from before. After you sign in you can copy them into the shared workspace.</p>`}
       <button type="button" class="btn sm ghost" onClick=${() => { pref('forceLocal', true); startLocal(); }}>Use this browser only instead</button>
     </form>

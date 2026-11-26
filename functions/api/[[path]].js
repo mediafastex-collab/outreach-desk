@@ -54,7 +54,9 @@ export async function onRequest(context) {
   const hasDb = !!env.DB;
   const hasKey = !!(env.WORKSPACE_KEY && String(env.WORKSPACE_KEY).length >= 6);
 
-  if (route === 'status') return json({ app: 'fastex-outreach-desk', configured: hasDb && hasKey, hasDb, hasKey });
+  // ADMIN_WHATSAPP (optional): number shown on the login screen's "Forgot passcode?" help.
+  const adminWhatsapp = String(env.ADMIN_WHATSAPP || '').replace(/[^0-9]/g, '') || null;
+  if (route === 'status') return json({ app: 'fastex-outreach-desk', configured: hasDb && hasKey, hasDb, hasKey, adminWhatsapp });
   if (!hasDb || !hasKey) return json({ error: 'not_configured' }, 503);
 
   const given = request.headers.get('x-workspace-key') || '';
