@@ -195,6 +195,15 @@ async function saveFile(filename, data) {
   }
   UI.open('text', { title: filename, text: data, sub: 'Downloads are not available here. Copy the contents instead.' });
 }
+/* The Fastex Media "FX" mark (from brandkit.fastexmedia.com): ink letters, orange chevron. */
+function FxMark({ size }) {
+  const h = size || 24;
+  return html`<svg class="fx-mark" viewBox="138 155 338 306" width=${Math.round(h * 338 / 306)} height=${h} aria-hidden="true">
+    <path fill="currentColor" d="M138 241H261.33L290.67 285H138ZM138 330H291.33L262 374H181V461H138Z" />
+    <path fill="currentColor" d="M416 155H476L380.5 298.25L350.5 253.25ZM416 461H476L380.5 317.75L350.5 362.75Z" />
+    <path fill="#FF6600" d="M204 155H264L366 308L264 461H204L306 308Z" /></svg>`;
+}
+
 /* ---------- roles and permissions (enforced again on the server) ---------- */
 const ROLE_INFO = {
   admin: { label: 'Admin', desc: 'Everything, including users & access and workspace settings.' },

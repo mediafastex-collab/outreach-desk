@@ -90,7 +90,7 @@ function Rail({ counts }) {
   const hasTeam = (data.settings.team || []).length > 0;
   return html`<nav class="rail" aria-label="Main">
     <div class="brand">
-      <span class="brand-mark"><${Icon} n="send" s=${16} /></span>
+      <span class="brand-mark"><${FxMark} size=${22} /></span>
       <div><div class="brand-name">${data.settings.agencyName || 'Fastex'}</div><div class="brand-sub">Outreach desk</div></div>
     </div>
     <${WorkspaceSwitcher} />
@@ -185,7 +185,7 @@ function Gate() {
   };
   return html`<div class="gate-screen">
     <form class="gate-card" onSubmit=${submit}>
-      <span class="brand-mark" style="width:44px;height:44px;border-radius:12px"><${Icon} n="send" s=${20} /></span>
+      <span class="brand-mark big"><${FxMark} size=${34} /></span>
       <h1>Outreach Desk</h1>
       <p class="soft">Sign in with the email and password your admin gave you.</p>
       <label class="field"><span>Email</span>
@@ -215,7 +215,7 @@ function SetupScreen() {
   };
   return html`<div class="gate-screen">
     <form class="gate-card" onSubmit=${submit}>
-      <span class="brand-mark" style="width:44px;height:44px;border-radius:12px"><${Icon} n="send" s=${20} /></span>
+      <span class="brand-mark big"><${FxMark} size=${34} /></span>
       <h1>Create the admin account</h1>
       <p class="soft">The desk now uses personal logins. Create the first admin account, then add your team in Team & access.</p>
       <label class="field"><span>Setup code <span class="hint">the old team passcode</span></span>
@@ -232,7 +232,7 @@ function SetupScreen() {
 }
 function OfflineScreen() {
   return html`<div class="gate-screen"><div class="gate-card">
-    <span class="brand-mark" style="width:44px;height:44px;border-radius:12px"><${Icon} n="send" s=${20} /></span>
+    <span class="brand-mark big"><${FxMark} size=${34} /></span>
     <h1>Can't reach the desk</h1>
     <p class="soft">The shared workspace isn't answering. Check your internet connection, then try again.</p>
     <button type="button" class="btn primary" onClick=${() => location.reload()}>Try again</button>

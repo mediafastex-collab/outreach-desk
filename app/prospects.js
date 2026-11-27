@@ -31,6 +31,9 @@ function ProspectsView() {
   const data = currentData();
   const f = UI.prospectFilter;
   const setF = patch => { UI.set({ prospectFilter: Object.assign({}, f, patch) }); setLimit(100); };
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const activeFilters = (f.clientId && !UI.scope ? 1 : 0) + (f.senderId ? 1 : 0) + (f.sequenceId ? 1 : 0) + (f.tag ? 1 : 0) + (f.potential ? 1 : 0) + (f.country ? 1 : 0) + (UI.addedFilter.period && UI.addedFilter.period !== 'all' ? 1 : 0);
+  const showFilters = filtersOpen || activeFilters > 0;
   const [limit, setLimit] = useState(100);
   const [sel, setSel] = useState(() => new Set());
   const q = f.q.trim().toLowerCase();
@@ -133,23 +136,8 @@ function ProspectsView() {
     <div class="toolbar">
       <label class="search grow"><${Icon} n="search" s=${15} /><span class="sr">Search prospects</span>
         <input id="p-search" class="input" type="search" placeholder="Search name, company, headline, tag…" value=${f.q} onInput=${e => setF({ q: e.target.value })} /></label>
-      ${!UI.scope && html`<${ClientSelect} id="p-client" cls="select sm" data=${data} value=${f.clientId} all=${true} includeInactive=${true} onChange=${v => setF({ clientId: v, senderId: '', listId: '' })} />`}
-      ${client && (client.senders || []).length > 1 && html`<select id="p-sender" class="select sm" value=${f.senderId} onChange=${e => setF({ senderId: e.target.value })}>
-        <option value="" selected=${!f.senderId}>All accounts</option>
-        ${client.senders.map(s => html`<option key=${s.id} value=${s.id} selected=${f.senderId === s.id}>${s.name}</option>`)}
-      </select>`}
-      <${PeriodFilter} id="p-added" prefix="Added" allLabel="Any time" value=${af} onChange=${v => { UI.set({ addedFilter: v }); setLimit(100); }} title="Only people added to the desk in this period (for imports: the date in the sheet)" />
-      <${SequenceSelect} id="p-seq" cls="select sm" data=${data} value=${f.sequenceId} allowEmpty="All sequences" onChange=${v => setF({ sequenceId: v })} />
-      ${tags.length > 0 && html`<select id="p-tag" class="select sm" value=${f.tag} onChange=${e => setF({ tag: e.target.value })}>
-        <option value="" selected=${!f.tag}>All tags</option>${tags.map(t => html`<option key=${t} value=${t} selected=${f.tag === t}>${t}</option>`)}</select>`}
-      <select id="p-pot" class="select sm" value=${f.potential || ''} onChange=${e => setF({ potential: e.target.value })} aria-label="Potential">
-        <option value="" selected=${!f.potential}>Any potential</option>
-        ${Object.keys(POTENTIALS).map(k => html`<option key=${k} value=${k} selected=${f.potential === k}>${POTENTIALS[k].label} potential</option>`)}
-        <option value="_none" selected=${f.potential === '_none'}>Potential not set</option>
-      </select>
-      ${countries.length > 0 && html`<select id="p-country" class="select sm" value=${f.country || ''} onChange=${e => setF({ country: e.target.value })} aria-label="Country">
-        <option value="" selected=${!f.country}>All countries</option>${countries.map(c => html`<option key=${c} value=${c} selected=${f.country === c}>${c}</option>`)}</select>`}
-      ${needsCount > 0 && html`<button type="button" class=${'btn sm' + (f.needs ? ' primary' : '')} aria-pressed=${f.needs ? 'true' : 'false'} title="Name read from the LinkedIn URL, or no company and no position yet" onClick=${() => setF({ needs: !f.needs })}><${Icon} n="edit" s=${13} />Needs details · ${needsCount}</button>`}
+      <button type="button" class=${'btn' + (activeFilters ? ' filter-on' : '')} aria-expanded=${showFilters ? 'true' : 'false'} onClick=${() => setFiltersOpen(!showFilters)}><${Icon} n="sliders" s=${14} />Filters${activeFilters ? ' · ' + activeFilters : ''}</button>
+      ${needsCount > 0 && html`<button type="button" class=${'btn' + (f.needs ? ' filter-on' : '')} aria-pressed=${f.needs ? 'true' : 'false'} title="Name read from the LinkedIn URL, or no company and no position yet" onClick=${() => setF({ needs: !f.needs })}><${Icon} n="edit" s=${13} />Needs details · ${needsCount}</button>`}
       <select id="p-sort" class="select sm" value=${f.sort} onChange=${e => setF({ sort: e.target.value })} aria-label="Sort">
         <option value="next" selected=${f.sort === 'next'}>Sort: next due</option>
         <option value="added" selected=${f.sort === 'added'}>Sort: newest added</option>
@@ -159,6 +147,25 @@ function ProspectsView() {
         <option value="quiet" selected=${f.sort === 'quiet'}>Sort: longest without contact</option>
       </select>
     </div>
+    ${showFilters && html`<div class="toolbar filter-row">
+      ${!UI.scope && html`<${ClientSelect} id="p-client" cls="select sm" data=${data} value=${f.clientId} all=${true} includeInactive=${true} onChange=${v => setF({ clientId: v, senderId: '', listId: '' })} />`}
+      ${client && (client.senders || []).length > 1 && html`<select id="p-sender" class="select sm" value=${f.senderId} onChange=${e => setF({ senderId: e.target.value })}>
+        <option value="" selected=${!f.senderId}>All accounts</option>
+        ${client.senders.map(s => html`<option key=${s.id} value=${s.id} selected=${f.senderId === s.id}>${s.name}</option>`)}
+      </select>`}
+      <${SequenceSelect} id="p-seq" cls="select sm" data=${data} value=${f.sequenceId} allowEmpty="All sequences" onChange=${v => setF({ sequenceId: v })} />
+      <${PeriodFilter} id="p-added" prefix="Added" allLabel="Any time" value=${af} onChange=${v => { UI.set({ addedFilter: v }); setLimit(100); }} title="Only people added to the desk in this period (for imports: the date in the sheet)" />
+      ${tags.length > 0 && html`<select id="p-tag" class="select sm" value=${f.tag} onChange=${e => setF({ tag: e.target.value })}>
+        <option value="" selected=${!f.tag}>All tags</option>${tags.map(t => html`<option key=${t} value=${t} selected=${f.tag === t}>${t}</option>`)}</select>`}
+      <select id="p-pot" class="select sm" value=${f.potential || ''} onChange=${e => setF({ potential: e.target.value })} aria-label="Potential">
+        <option value="" selected=${!f.potential}>Any potential</option>
+        ${Object.keys(POTENTIALS).map(k => html`<option key=${k} value=${k} selected=${f.potential === k}>${POTENTIALS[k].label} potential</option>`)}
+        <option value="_none" selected=${f.potential === '_none'}>Potential not set</option>
+      </select>
+      ${countries.length > 0 && html`<select id="p-country" class="select sm" value=${f.country || ''} onChange=${e => setF({ country: e.target.value })} aria-label="Country">
+        <option value="" selected=${!f.country}>All countries</option>${countries.map(c => html`<option key=${c} value=${c} selected=${f.country === c}>${c}</option>`)}</select>`}
+      ${activeFilters > 0 && html`<button type="button" class="btn sm ghost" onClick=${() => { setF({ clientId: UI.scope || '', senderId: '', sequenceId: '', tag: '', potential: '', country: '', listId: '' }); UI.set({ addedFilter: { period: 'all', from: '', to: '' } }); }}>Clear filters</button>`}
+    </div>`}
 
     ${client ? html`<div class="list-strip" role="group" aria-label="Lists">
       <span class="label"><${Icon} n="list" s=${14} />Lists</span>

@@ -365,6 +365,9 @@ function TodayView() {
   const tq = needleOf(f.q);
   const board = useMemo(() => buildBoard(data, { today: TODAY, clientId: f.clientId, operatorId: f.operatorId, listId: f.clientId ? f.listId : '', added, q: tq }), [data, TODAY, f.clientId, f.operatorId, f.listId, tq, af.period, af.from, af.to]);
   const setF = patch => UI.set({ todayFilter: Object.assign({}, f, patch) });
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const activeFilters = (f.clientId && !UI.scope ? 1 : 0) + (f.listId ? 1 : 0) + (f.operatorId ? 1 : 0) + (af.period && af.period !== 'all' ? 1 : 0);
+  const showFilters = filtersOpen || activeFilters > 0;
   const c = board.counts;
   const g = f.group || 'all';
   const match = x => g === 'all' || (g === 'overdue' ? x.due < TODAY : x.group === g);
@@ -418,15 +421,19 @@ function TodayView() {
     </div>
 
     <div class="toolbar">
-      ${!UI.scope && html`<${ClientSelect} id="today-client" cls="select sm" data=${data} value=${f.clientId} all=${true} onChange=${v => setF({ clientId: v, listId: '' })} />`}
-      <${ClientListSelect} id="today-list" data=${data} clientId=${UI.scope || f.clientId} listId=${f.listId} onChange=${(c, l) => setF({ clientId: UI.scope || c, listId: l })} />
-      <${MemberSelect} id="today-member" cls="select sm" settings=${data.settings} value=${f.operatorId} all=${true} allLabel="All team members" onChange=${v => setF({ operatorId: v })} />
-      <${SearchBox} id="today-search" value=${f.q} placeholder="Search name or company…" onInput=${v => setF({ q: v })} />
-      <${PeriodFilter} id="today-added" prefix="Added" allLabel="Any time" value=${af} onChange=${v => UI.set({ addedFilter: v })} title="Only people added to the desk in this period (for imports: the date in the sheet)" />
+      <${SearchBox} id="today-search" grow=${true} value=${f.q} placeholder="Search name or company…" onInput=${v => setF({ q: v })} />
+      <button type="button" class=${'btn' + (activeFilters ? ' filter-on' : '')} aria-expanded=${showFilters ? 'true' : 'false'} onClick=${() => setFiltersOpen(!showFilters)}><${Icon} n="sliders" s=${14} />Filters${activeFilters ? ' · ' + activeFilters : ''}</button>
       ${tab === 'todo' && html`<div class="seg" role="group" aria-label="Task type">
         ${types.map(([k, l]) => html`<button type="button" key=${k} aria-pressed=${g === k ? 'true' : 'false'} onClick=${() => setF({ group: k })}>${l}</button>`)}
       </div>`}
     </div>
+    ${showFilters && html`<div class="toolbar filter-row">
+      ${!UI.scope && html`<${ClientSelect} id="today-client" cls="select sm" data=${data} value=${f.clientId} all=${true} onChange=${v => setF({ clientId: v, listId: '' })} />`}
+      <${ClientListSelect} id="today-list" data=${data} clientId=${UI.scope || f.clientId} listId=${f.listId} onChange=${(c, l) => setF({ clientId: UI.scope || c, listId: l })} />
+      <${MemberSelect} id="today-member" cls="select sm" settings=${data.settings} value=${f.operatorId} all=${true} allLabel="All team members" onChange=${v => setF({ operatorId: v })} />
+      <${PeriodFilter} id="today-added" prefix="Added" allLabel="Any time" value=${af} onChange=${v => UI.set({ addedFilter: v })} title="Only people added to the desk in this period (for imports: the date in the sheet)" />
+      ${activeFilters > 0 && html`<button type="button" class="btn sm ghost" onClick=${() => { setF({ clientId: UI.scope || '', listId: '', operatorId: '' }); UI.set({ addedFilter: { period: 'all', from: '', to: '' } }); }}>Clear filters</button>`}
+    </div>`}
 
     ${board.hiddenClients.length > 0 && html`<p class="muted" style="font-size:12.5px">${plural(board.hiddenClients.length, 'paused client')} hidden: ${board.hiddenClients.map(id => (data.clients[id] || {}).name).join(', ')}.</p>`}
 

@@ -3,21 +3,21 @@
 /* ---------- tokens (the desk is white/light only) ---------- */
 :root {
   color-scheme: light;
-  --bg: #F0F3F1;
+  --bg: #FBFAF8;
   --surface: #FFFFFF;
-  --surface-2: #F6F8F7;
-  --sunken: #E7ECE9;
-  --ink: #101915;
-  --ink-2: #44524C;
-  --ink-3: #6B7973;
-  --line: #DAE1DD;
-  --line-2: #C3CDC8;
-  --accent: #0B6B57;
-  --accent-hover: #08594A;
-  --accent-ink: #FFFFFF;
-  --accent-soft: #DBEEE7;
-  --accent-text: #0A5E4C;
-  --focus-ring: rgba(11, 107, 87, 0.35);
+  --surface-2: #F7F5F1;
+  --sunken: #F0EEE9;
+  --ink: #0D0D0D;
+  --ink-2: #3D3D42;
+  --ink-3: #63636B;
+  --line: #E7E4DE;
+  --line-2: #D6D2CA;
+  --accent: #0D0D0D;
+  --accent-hover: #2B2B2B;
+  --accent-ink: #FBFAF8;
+  --accent-soft: #FFEEE2;
+  --accent-text: #C94A00;
+  --focus-ring: rgba(255, 102, 0, 0.35);
   --overdue: #B3301A;
   --overdue-soft: #FBE6E0;
   --today: #8F5200;
@@ -28,19 +28,19 @@
   --good-soft: #E0F1E4;
   --info: #285AA5;
   --info-soft: #E2EBF8;
-  --muted-bg: #EAEEEC;
-  --muted-fg: #52605A;
-  --series-1: #2a78d6;
-  --series-2: #149469;
+  --muted-bg: #F0EEE9;
+  --muted-fg: #55555C;
+  --series-1: #FF6600;
+  --series-2: #0D0D0D;
   --series-reply: #6340CF;
-  --grid: #E5EAE7;
-  --axis: #C3CDC8;
-  --overlay: rgba(12, 20, 17, 0.42);
+  --grid: #ECE9E3;
+  --axis: #D6D2CA;
+  --overlay: rgba(13, 13, 13, 0.42);
   --inv-line: rgba(255, 255, 255, 0.28);
   --inv-hover: rgba(255, 255, 255, 0.12);
   --shadow-1: 0 1px 2px rgba(16, 25, 21, 0.06);
   --shadow-2: 0 14px 36px rgba(16, 25, 21, 0.16), 0 2px 6px rgba(16, 25, 21, 0.06);
-  --c0-bg: #DCEFE8; --c0-fg: #0A5A49;
+  --c0-bg: #FFEEE2; --c0-fg: #A63D00;
   --c1-bg: #E0E9F7; --c1-fg: #234E8C;
   --c2-bg: #EBE5FA; --c2-fg: #5537B0;
   --c3-bg: #F8E2E9; --c3-fg: #962A52;
@@ -48,12 +48,15 @@
   --c5-bg: #DBEFF4; --c5-fg: #1A5F70;
   --c6-bg: #E8EFD6; --c6-fg: #4A5E16;
   --c7-bg: #E5E8EE; --c7-fg: #3A475B;
-  --font-display: "Bricolage Grotesque", "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
-  --font-body: "Instrument Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  --r-sm: 6px;
-  --r: 8px;
-  --r-lg: 12px;
+  /* Fastex Media brand kit: Newsreader for headlines, Inter for everything else (no third typeface). */
+  --font-display: "Newsreader", Georgia, "Times New Roman", serif;
+  --font-body: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  --font-mono: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+  --brand-orange: #FF6600;
+  --ember: #C94A00;
+  --r-sm: 8px;
+  --r: 12px;
+  --r-lg: 18px;
 }
 
 /* ---------- base ---------- */
@@ -851,3 +854,87 @@ button.sync { border: 0; background: none; padding: 0; text-align: left; cursor:
 .acct-lists button { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 3px 10px; font-size: 12.5px; cursor: pointer; color: var(--ink); }
 .acct-lists button:hover { border-color: var(--accent); color: var(--accent-text); }
 .acct-lists .n { font-family: var(--font-mono); font-size: 11.5px; color: var(--ink-3); }
+
+/* ==========================================================================
+   Fastex Media brand layer (brandkit.fastexmedia.com): paper & ink, orange as a
+   signal (under 10% of the screen), Newsreader headlines, Inter for everything else,
+   ink pill buttons, white cards with a hairline border.
+   ========================================================================== */
+body { font-family: var(--font-body); -webkit-font-smoothing: antialiased; }
+.mono, .num, .count, .n, .chars, .run-progress, .tl .when, .log .d, kbd { font-variant-numeric: tabular-nums; letter-spacing: 0; }
+
+/* headlines: Newsreader 400, sentence case, slight negative tracking */
+.page-head h1, .gate-card h1, .modal-head h2, .drawer-head h2, .guide-card h3, .run-name, .panel-head h3, .empty h3 {
+  font-family: var(--font-display); font-weight: 400; letter-spacing: -0.015em;
+}
+.page-head h1 { font-size: 38px; line-height: 1.08; }
+.gate-card h1 { font-size: 32px; }
+.modal-head h2 { font-size: 24px; }
+.drawer-head h2 { font-size: 26px; }
+.run-name { font-size: 28px; }
+.panel-head h3 { font-size: 19px; }
+.stat .v { font-family: var(--font-display); font-weight: 400; font-size: 34px; letter-spacing: -0.02em; }
+.kpi .v { font-family: var(--font-display); font-weight: 400; letter-spacing: -0.02em; }
+@media (max-width: 720px) { .page-head h1 { font-size: 30px; } .stat .v { font-size: 26px; } }
+
+/* eyebrows & small labels: Inter 600 uppercase, wide tracking; eyebrows in Ember */
+.eyebrow { font-family: var(--font-body); font-weight: 600; font-size: 11.5px; letter-spacing: 0.12em; color: var(--ember); }
+.brand-sub, .rail-foot label, .ws-k, .seq-group, .menu .mh, .drawer-sec > h3, .acct-lists .label { font-family: var(--font-body); font-weight: 600; letter-spacing: 0.12em; }
+.lede { color: var(--ink-3); font-size: 15px; }
+
+/* logo: FX mark + wordmark */
+.brand-mark { background: transparent; color: var(--ink); width: auto; height: 32px; border-radius: 0; }
+.brand-mark.big { height: auto; margin-bottom: 4px; justify-content: start; }
+.brand-name { font-family: var(--font-body); font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; font-size: 15px; }
+.fx-mark { display: block; }
+
+/* buttons: ink pills; secondary are white pills with a hairline */
+.btn { border-radius: 999px; padding: 0 16px; border-color: rgba(13, 13, 13, 0.16); font-weight: 500; }
+.btn.sm { padding: 0 12px; }
+.btn.icon, .btn.sm.icon { padding: 0; border-radius: 50%; }
+.btn:hover { border-color: rgba(13, 13, 13, 0.35); background: var(--surface); }
+.btn.primary { background: var(--ink); border-color: var(--ink); color: #FBFAF8; }
+.btn.primary:hover { background: #2B2B2B; border-color: #2B2B2B; }
+.btn.ghost { border-color: transparent; background: transparent; }
+.btn.ghost:hover { background: var(--sunken); }
+.btn.filter-on { background: var(--accent-soft); border-color: var(--brand-orange); color: var(--ink); }
+.btn.danger.solid { color: #fff; }
+
+/* cards & inputs */
+.panel { border-color: rgba(13, 13, 13, 0.1); box-shadow: none; }
+.input, .select, .textarea { border-radius: 10px; border-color: rgba(13, 13, 13, 0.16); }
+.input:focus, .select:focus, .textarea:focus { border-color: var(--brand-orange); box-shadow: 0 0 0 3px var(--focus-ring); outline: none; }
+:focus-visible { outline-color: var(--brand-orange); }
+
+/* navigation: quiet; the current page gets a white pill and an orange marker */
+.rail { background: #F5F3EE; }
+.nav-item { border-radius: 999px; }
+.nav-item[aria-current="page"] { background: var(--surface); box-shadow: inset 0 0 0 1px rgba(13, 13, 13, 0.1); }
+.nav-item[aria-current="page"] svg { color: var(--brand-orange); }
+.nav-item .count.hot { background: var(--brand-orange); color: var(--ink); font-weight: 600; }
+
+/* orange as a signal: progress, selected tab, meters */
+.progress-fill, .meter-fill { background: var(--brand-orange); }
+.tabs button[aria-selected="true"] { border-bottom-color: var(--brand-orange); }
+.tabs.big button[aria-selected="true"] .n { background: var(--ink); color: #FBFAF8; }
+.seg { border-radius: 999px; }
+.seg button { border-radius: 999px; }
+.status-strip button[aria-pressed="true"], .list-strip button[aria-pressed="true"] { border-color: var(--ink); background: var(--ink); color: #FBFAF8; }
+.status-strip button[aria-pressed="true"] .n, .list-strip button[aria-pressed="true"] .n { color: rgba(251, 250, 248, 0.75); }
+.linkish { color: var(--ember); }
+.gate-screen { background: var(--bg); }
+.gate-card { border-radius: 22px; border: 1px solid rgba(13, 13, 13, 0.1); box-shadow: none; }
+.modal { border-radius: 22px; }
+.me-av { background: var(--accent-soft); color: var(--ember); }
+.filter-row { padding: 10px 12px; border-radius: 16px; background: var(--surface-2); border: 1px solid rgba(13, 13, 13, 0.08); }
+/* keep orange rare: progress chips and message tones stay neutral ink */
+.tone-accent { background: #F0EEE9; color: var(--ink); }
+.journey .j-done { background: #F0EEE9; color: var(--ink-2); }
+.journey .j-now { border-color: var(--ink); color: var(--ink); background: var(--surface); }
+.task-msg { background: var(--surface-2); border-color: rgba(13, 13, 13, 0.08); }
+.acct-head { background: var(--surface); }
+.acct-lists { background: var(--surface-2); }
+.hint-bar { background: var(--surface-2); border: 1px solid rgba(13, 13, 13, 0.08); color: var(--ink-2); }
+.hint-bar svg { color: var(--ember); }
+.toolbar .search.grow { flex: 1 1 280px; min-width: 220px; }
+.toolbar .search.grow .input { width: 100%; }
