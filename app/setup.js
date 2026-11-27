@@ -830,6 +830,62 @@ function UserModal({ u }) {
   <//>`;
 }
 
+/* Clients × users grid on Team & access: who manages each client and who can see it. */
+function ClientAccessPanel() {
+  const data = rawData();
+  useEffect(() => { if (!Users.list && !Users.loading) loadUsers(); }, []);
+  const [q, setQ] = useState('');
+  const [busy, setBusy] = useState('');
+  const allIds = Object.keys(data.clients);
+  const people = (Users.list || []).filter(u => u.active && u.role !== 'admin');
+  const admins = (Users.list || []).filter(u => u.active && u.role === 'admin');
+  const n = needleOf(q);
+  const clients = Object.values(data.clients).filter(c => !n || (c.name || '').toLowerCase().indexOf(n) !== -1).sort((a, b) => byText(a.name, b.name));
+  const sees = (u, cid) => !u.clients || u.clients.indexOf(cid) !== -1;
+  const putClients = async (u, list, msg) => {
+    setBusy(u.id);
+    const r = await api('PUT', 'users/' + u.id, { clients: list });
+    setBusy('');
+    if (!r.ok) { UI.toast(authError(r), { bad: true }); return false; }
+    await loadUsers(); if (msg) UI.toast(msg); return true;
+  };
+  const toggle = (u, c) => {
+    const base = u.clients ? u.clients.slice() : allIds.slice();
+    const on = base.indexOf(c.id) !== -1;
+    const list = on ? base.filter(x => x !== c.id) : base.concat(c.id);
+    putClients(u, list, on ? u.name + ' can no longer see ' + c.name + '.' : u.name + ' can now see ' + c.name + '.');
+  };
+  const setAll = u => u.clients ? putClients(u, null, u.name + ' now sees all clients, including new ones.')
+    : putClients(u, allIds.slice(), u.name + ' now sees only the ticked clients. New clients won\'t be added automatically.');
+  const setManager = async (c, mid) => {
+    if (!W.guard()) return;
+    const ok = await W.saveClient(Object.assign(clone(c), { ownerId: mid, updatedAt: nowTs() }));
+    if (!ok) return;
+    const linked = mid && (Users.list || []).find(u => u.memberId === mid && u.role !== 'admin');
+    if (linked && !sees(linked, c.id)) await putClients(linked, linked.clients.concat(c.id), c.name + ' assigned to ' + linked.name + ', who can now see it.');
+    else UI.toast(c.name + ' assigned to ' + (memberName(data.settings, mid) || 'no one') + '.');
+  };
+  return html`<section class="panel">
+    <div class="panel-head"><h3>Client assignments</h3><span class="muted" style="font-size:12.5px">Who manages each client, and who can see it</span></div>
+    <div class="panel-pad stack">
+      <p class="soft" style="font-size:13px">Pick an account manager for each client, and tick the people who should see it. People only see the clients ticked for them. Admins${admins.length ? ' (' + admins.map(a => a.name).join(', ') + ')' : ''} always see everything. Changes apply when they refresh the page.</p>
+      ${allIds.length > 8 && html`<${SearchBox} id="ca-q" value=${q} onInput=${setQ} placeholder="Search clients…" />`}
+    </div>
+    ${!Users.list ? html`<p class="panel-pad muted">Loading…</p>` : html`<div class="table-wrap"><table class="data access-table">
+      <thead><tr><th>Client</th><th>Account manager</th>
+        ${people.map(u => html`<th key=${u.id} class="n"><div class="ac-head"><strong>${u.name}</strong><span class="muted">${ROLE_INFO[u.role].label}</span>
+          <label class="check ac-all" title="See every client, including ones added later"><input type="checkbox" disabled=${busy === u.id} checked=${!u.clients} onChange=${() => setAll(u)} />All</label></div></th>`)}</tr></thead>
+      <tbody>${clients.map(c => html`<tr key=${c.id}>
+        <td><${ClientChip} client=${c} /></td>
+        <td><${MemberSelect} id=${'ca-m-' + c.id} cls="select sm" role="manager" settings=${data.settings} value=${c.ownerId} onChange=${x => setManager(c, x)} /></td>
+        ${people.map(u => html`<td key=${u.id} class="n"><input type="checkbox" aria-label=${u.name + ' can see ' + c.name} disabled=${busy === u.id || !u.clients} checked=${sees(u, c.id)} onChange=${() => toggle(u, c)} /></td>`)}
+      </tr>`)}</tbody>
+    </table></div>
+    ${!people.length && html`<p class="panel-pad muted" style="font-size:13px">Add a user who isn't an admin to choose which clients they see.</p>`}
+    ${people.some(u => !u.clients) && html`<p class="panel-pad muted" style="font-size:12.5px">Untick <strong>All</strong> under a person's name to choose their clients one by one.</p>`}`}
+  </section>`;
+}
+
 /* What each role may do, shown on Team & access. */
 const PERMISSION_ROWS = [
   ['See prospects, activity and reports', 1, 1, 1, 1],
@@ -864,6 +920,7 @@ function UsersView() {
         </section>
       </div>
     </div>
+    <${ClientAccessPanel} />
     <section class="panel">
           <div class="panel-head"><h3>Roles & permissions</h3><span class="muted" style="font-size:12.5px">Checked by the server on every change</span></div>
           <div class="table-wrap"><table class="data perm-table">
