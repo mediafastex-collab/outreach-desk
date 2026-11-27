@@ -426,13 +426,13 @@ function Modal({ title, sub, children, foot, onClose, size }) {
   </div>`;
 }
 
-function ConfirmModal({ title, body, confirmLabel, danger, typed, onConfirm }) {
+function ConfirmModal({ title, body, confirmLabel, cancelLabel, danger, typed, onConfirm }) {
   const [val, setVal] = useState('');
   const [busy, setBusy] = useState(false);
   const ok = !typed || val.trim().toUpperCase() === typed.toUpperCase();
   const go = async () => { setBusy(true); try { await onConfirm(); } finally { setBusy(false); UI.close(); } };
   return html`<${Modal} title=${title} size="narrow" foot=${html`
-      <button type="button" class="btn" onClick=${() => UI.close()}>Cancel</button>
+      <button type="button" class="btn" onClick=${() => UI.close()}>${cancelLabel || 'Cancel'}</button>
       <button type="button" class=${'btn ' + (danger ? 'danger solid' : 'primary')} disabled=${!ok || busy} onClick=${go}>${busy ? 'Working…' : confirmLabel || 'Confirm'}</button>`}>
     <p class="soft">${body}</p>
     ${typed && html`<label class="field"><span>Type ${typed} to confirm</span><input id="confirm-typed" class="input" data-autofocus value=${val} onInput=${e => setVal(e.target.value)} /></label>`}
@@ -601,6 +601,30 @@ function ListSelect({ value, onChange, data, clientId, id, cls, allLabel, allowN
   </select>`;
 }
 /* Saves a new list on the client and returns it. */
+/* Points the given lists at a sequence (and, with exclusive, unhooks the client's other lists from it),
+   then offers to move people already in those lists onto it, keeping their progress. */
+async function setListsSequence(clientId, seq, listIds, exclusive) {
+  const data = currentData();
+  const c = data.clients[clientId];
+  if (!c || !W.guard()) return false;
+  const want = new Set(listIds);
+  const lists = (c.lists || []).map(l => want.has(l.id) ? Object.assign({}, l, { sequenceId: seq.id })
+    : exclusive && l.sequenceId === seq.id ? Object.assign({}, l, { sequenceId: null }) : l);
+  const ok = await W.saveClient(Object.assign(clone(c), { lists, updatedAt: nowTs() }));
+  if (!ok) return false;
+  const movers = data.prospects.filter(p => p.clientId === clientId && p.listId && want.has(p.listId) && p.sequenceId !== seq.id);
+  if (movers.length) {
+    const names = (c.lists || []).filter(l => want.has(l.id)).map(l => l.name).join(', ');
+    UI.open('confirm', {
+      title: 'Move ' + plural(movers.length, 'person', 'people') + ' to ' + seq.name + '?',
+      body: names + ' now use' + (want.size === 1 ? 's' : '') + ' this sequence, and anyone added from now on starts on it. ' + plural(movers.length, 'person', 'people') + ' already in ' + (want.size === 1 ? 'the list are' : 'these lists are') + ' on another sequence. Move them too? They keep their progress: nobody is invited twice, and the next message is the next one in this sequence.',
+      confirmLabel: 'Move them', cancelLabel: 'Only new people',
+      onConfirm: () => moveToSequence(movers.map(fresh), seq),
+    });
+  }
+  return true;
+}
+
 async function createList(clientId, name, sequenceId) {
   const c = currentData().clients[clientId];
   if (!c || !W.guard()) return null;

@@ -369,7 +369,7 @@ function SequenceEditor({ seq, data }) {
   const usedBy = Object.values(data.clients).flatMap(c => (c.lists || []).filter(l => l.sequenceId === seq.id).map(l => c.name + ' · ' + l.name));
   return html`<div class="stack-lg">
     <div class="panel panel-pad stack">
-      <p class="muted" style="font-size:12.5px"><${Icon} n="list" s=${13} /> ${usedBy.length ? 'Lists using this sequence: ' + usedBy.join(', ') + '.' : 'No list uses this sequence yet. Pick it for a list in Clients → Lists, or Prospects → Manage lists.'}</p>
+      ${!seq.clientId && html`<p class="muted" style="font-size:12.5px"><${Icon} n="list" s=${13} /> ${usedBy.length ? 'Lists using this sequence: ' + usedBy.join(', ') + '.' : 'Shared template: copy it for a client to attach it to their lists.'}</p>`}
       <div class="seq-summary">
         <div><span class="k">Steps</span><span class="v">${d.steps.length}</span></div>
         <div><span class="k">Messages</span><span class="v">${d.steps.filter(x => groupOf(x.type) === 'message').length}</span></div>
@@ -382,6 +382,14 @@ function SequenceEditor({ seq, data }) {
           <option value="" selected=${!d.clientId}>All clients</option>
           ${Object.values(data.clients).sort((a, b) => byText(a.name, b.name)).map(c => html`<option key=${c.id} value=${c.id} selected=${d.clientId === c.id}>Only ${c.name}</option>`)}
         </select></label>
+        ${seq.clientId && data.clients[seq.clientId] && html`<div class="field full"><span>Used by lists <span class="hint">people in a ticked list follow this sequence; new people added to it start here automatically</span></span>
+          ${listsOf(data, seq.clientId).length ? html`<div class="client-checks">${listsOf(data, seq.clientId).map(l => {
+            const on = l.sequenceId === seq.id;
+            const other = !on && l.sequenceId && data.seqs[l.sequenceId];
+            return html`<label class="check" key=${l.id} title=${other ? 'Now uses ' + other.name : ''}><input type="checkbox" checked=${on} disabled=${!can('clients', seq.clientId)}
+              onChange=${e => setListsSequence(seq.clientId, seq, listsOf(data, seq.clientId).filter(x => x.id === l.id ? e.target.checked : x.sequenceId === seq.id).map(x => x.id), true).then(ok => ok && UI.toast(e.target.checked ? l.name + ' now uses ' + seq.name + '.' : l.name + ' no longer uses ' + seq.name + '.'))} />${l.name}${other ? html` <span class="muted" style="font-size:12px">(now ${other.name})</span>` : ''}</label>`;
+          })}</div>` : html`<span class="muted" style="font-size:12.5px">${data.clients[seq.clientId].name} has no lists yet. <button type="button" class="linkish" onClick=${() => UI.open('lists', { clientId: seq.clientId })}>Create a list</button></span>`}
+        </div>`}
         ${more && html`<label class="field full"><span>Description</span><input id="seq-desc" class="input" placeholder="When to use this sequence" value=${d.description || ''} onInput=${e => setD(Object.assign({}, d, { description: e.target.value }))} /></label>`}
       </div>
       ${!more && html`<button type="button" class="btn sm ghost" style="align-self:flex-start" onClick=${() => setMore(true)}>+ Add a description</button>`}
@@ -418,18 +426,22 @@ function SequenceEditor({ seq, data }) {
 
 const SEQ_PRESETS = [['standard', 'Standard 4-step (3 / 5 / 7 days)'], ['warmup', 'Warm-up first (visit, engage, invite)'], ['short', 'Short: 2 messages'], ['blank', 'Blank']];
 
-function NewSequenceModal({ clientId }) {
+function NewSequenceModal({ clientId, listId }) {
   const data = currentData();
-  const [cid, setCid] = useState(clientId || '');
+  const [cid, setCid] = useState(clientId || UI.scope || '');
+  const [lid, setLid] = useState(listId || '');
+  const [newList, setNewList] = useState('');
   const [from, setFrom] = useState('preset:standard');
   const [name, setName] = useState('');
-  const [makeDefault, setMakeDefault] = useState(!!clientId);
+  const [makeDefault, setMakeDefault] = useState(!!(clientId || UI.scope) && !listId);
   const [busy, setBusy] = useState(false);
   const existing = Object.values(data.seqs).filter(s => !s.archived).sort((a, b) => byText(a.name, b.name));
   const client = data.clients[cid];
   const suggested = () => {
     if (from.indexOf('copy:') === 0) { const src = data.seqs[from.slice(5)]; return (src ? src.name : 'Sequence') + (client ? ' · ' + client.name : ' (copy)'); }
     const pr = SEQUENCE_PRESETS[from.slice(7)] || SEQUENCE_PRESETS.blank;
+    const ln = lid === '__new' ? newList.trim() : lid ? listName(data, cid, lid) : '';
+    if (ln) return (client ? client.name + ' · ' : '') + ln;
     return (client ? client.name + ' · ' : '') + pr.name;
   };
   const create = async () => {
@@ -444,25 +456,35 @@ function NewSequenceModal({ clientId }) {
     seq.name = name.trim() || suggested();
     seq.clientId = cid || null;
     const ok = await W.saveSequence(seq);
-    if (ok && cid && makeDefault && client) await W.saveClient(Object.assign(clone(client), { defaultSequenceId: seq.id, updatedAt: nowTs() }));
+    if (ok && cid && makeDefault && client) await W.saveClient(Object.assign(clone(currentData().clients[cid]), { defaultSequenceId: seq.id, updatedAt: nowTs() }));
     setBusy(false);
     if (!ok) return;
     UI.close();
     UI.go('sequences', { seqSelected: seq.id });
-    UI.toast(seq.name + ' created. Edit its messages, delays and send times below.');
+    let where = '';
+    if (cid && lid === '__new' && newList.trim()) { const l = await createList(cid, newList, seq.id); if (l) where = ' Prospects added to the new list “' + l.name + '” will follow it.'; }
+    else if (cid && lid) { await setListsSequence(cid, seq, [lid], false); where = ' Everyone added to “' + listName(data, cid, lid) + '” will follow it.'; }
+    UI.toast(seq.name + ' created.' + where + ' Write its messages below.');
   };
   return html`<${Modal} title="New sequence" sub="Build one per client so each client's cadence and messaging stay their own." size="narrow"
     foot=${html`<button type="button" class="btn" onClick=${() => UI.close()}>Cancel</button><button type="button" class="btn primary" disabled=${busy} onClick=${create}>Create sequence</button>`}>
-    <label class="field"><span>For</span><select id="ns-client" class="select" value=${cid} onChange=${e => { setCid(e.target.value); setMakeDefault(!!e.target.value); }}>
+    <label class="field"><span>For</span><select id="ns-client" class="select" value=${cid} onChange=${e => { setCid(e.target.value); setLid(''); setMakeDefault(!!e.target.value); }}>
       <option value="" selected=${!cid}>All clients (shared template)</option>
       ${Object.values(data.clients).filter(c => c.status !== 'archived').sort((a, b) => byText(a.name, b.name)).map(c => html`<option key=${c.id} value=${c.id} selected=${cid === c.id}>${c.name} only</option>`)}
     </select></label>
+    ${cid && html`<label class="field"><span>For list <span class="hint">people in this list get these messages automatically</span></span>
+      <select id="ns-list" class="select" value=${lid} onChange=${e => { setLid(e.target.value); setMakeDefault(!e.target.value); }}>
+        <option value="" selected=${!lid}>No specific list (any of ${client ? client.name + "'s" : 'the client\'s'} prospects)</option>
+        ${listsOf(data, cid).map(l => html`<option key=${l.id} value=${l.id} selected=${lid === l.id}>${l.name}${l.sequenceId && data.seqs[l.sequenceId] ? ' (now: ' + data.seqs[l.sequenceId].name + ')' : ''}</option>`)}
+        <option value="__new" selected=${lid === '__new'}>+ New list…</option>
+      </select>
+      ${lid === '__new' && html`<input id="ns-newlist" class="input" style="margin-top:6px" placeholder="List name, e.g. Mumbai" value=${newList} onInput=${e => setNewList(e.target.value)} />`}</label>`}
     <label class="field"><span>Start from</span><select id="ns-from" class="select" value=${from} onChange=${e => setFrom(e.target.value)}>
       <optgroup label="Templates">${SEQ_PRESETS.map(([k, l]) => html`<option key=${k} value=${'preset:' + k} selected=${from === 'preset:' + k}>${l}</option>`)}</optgroup>
       ${existing.length > 0 && html`<optgroup label="Copy an existing sequence">${existing.map(x => html`<option key=${x.id} value=${'copy:' + x.id} selected=${from === 'copy:' + x.id}>${x.name}</option>`)}</optgroup>`}
     </select></label>
     <label class="field"><span>Name</span><input id="ns-name" class="input" data-autofocus placeholder=${suggested()} value=${name} onInput=${e => setName(e.target.value)} /></label>
-    ${cid && html`<label class="check"><input id="ns-default" type="checkbox" checked=${makeDefault} onChange=${e => setMakeDefault(e.target.checked)} />Make it ${client ? client.name + "'s" : 'the client'} default for new prospects</label>`}
+    ${cid && html`<label class="check"><input id="ns-default" type="checkbox" checked=${makeDefault} onChange=${e => setMakeDefault(e.target.checked)} />Also make it ${client ? client.name + "'s" : 'the client'} default for prospects not in a list</label>`}
   <//>`;
 }
 
