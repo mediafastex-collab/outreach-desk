@@ -68,6 +68,15 @@ const GUIDES = {
       { icon: 'copy', title: 'Send a client update', body: '"Copy report" copies a ready-to-paste summary for email or WhatsApp. The client table has one per client.' },
     ],
   },
+  users: {
+    title: 'How to use Team & access',
+    steps: [
+      { icon: 'plus', title: 'Add a user', body: 'Click "Add user", enter their name and email, pick a role and which clients they can see. The desk gives you a temporary password to send them; they choose their own at first sign-in.' },
+      { icon: 'shield', title: 'Roles', body: 'Admin: everything. Manager: clients, sequences, imports and deleting prospects. Member: works Today and Focus run, adds and edits prospects. Viewer: read only. The table on the right shows exactly who can do what.' },
+      { icon: 'lock', title: 'Forgot password', body: 'Open the user\'s ⋯ menu and choose "Reset password". Send them the temporary password; their old one stops working right away.' },
+      { icon: 'pause', title: 'Remove access', body: '"Turn off" blocks sign-in but keeps the account, so you can turn it back on. "Delete user" removes it. Their past activity stays in the history either way.' },
+    ],
+  },
   settings: {
     title: 'How to use Settings',
     steps: [

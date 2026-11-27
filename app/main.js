@@ -2,7 +2,7 @@
    App shell: navigation rail, banners, modal registry and boot. */
 'use strict';
 
-const VIEWS = ['today', 'prospects', 'activity', 'clients', 'sequences', 'reports', 'settings'];
+const VIEWS = ['today', 'prospects', 'activity', 'clients', 'sequences', 'reports', 'users', 'settings'];
 
 const MODALS = {
   addProspect: p => html`<${AddProspectModal} clientId=${p.clientId} />`,
@@ -84,8 +84,9 @@ function Rail({ counts }) {
     ['clients', 'Clients', 'briefcase', Object.values(data.clients).filter(c => c.status !== 'archived').length],
     ['sequences', 'Sequences', 'route', null],
     ['reports', 'Reports', 'chart', null],
+    Store.user && can('users') ? ['users', 'Team & access', 'shield', null] : null,
     ['settings', 'Settings', 'sliders', null],
-  ];
+  ].filter(Boolean);
   const hasTeam = (data.settings.team || []).length > 0;
   return html`<nav class="rail" aria-label="Main">
     <div class="brand">
@@ -161,7 +162,7 @@ function ForgotHelp() {
   const wa = Store.serverInfo && Store.serverInfo.adminWhatsapp;
   if (!open) return html`<button type="button" class="linkish" style="font-size:13px;align-self:flex-start" onClick=${() => setOpen(true)}>Forgot password?</button>`;
   return html`<div class="note-box">
-    <p style="margin-bottom:8px"><strong>Forgot your password?</strong> Your admin can set a new one for you in Settings → Users & access. You'll pick your own after signing in.</p>
+    <p style="margin-bottom:8px"><strong>Forgot your password?</strong> Your admin can set a new one for you in Team & access. You'll pick your own after signing in.</p>
     ${wa ? html`<a class="btn sm primary" href=${'https://wa.me/' + wa + '?text=' + encodeURIComponent('Hi, I forgot my Outreach Desk password (outreach.fastexmedia.com). Can you reset it?')} target="_blank" rel="noopener noreferrer"><${Icon} n="send" s=${14} />Message the admin on WhatsApp</a>`
       : html`<p class="muted" style="font-size:12.5px">Message your workspace admin.</p>`}
   </div>`;
@@ -216,7 +217,7 @@ function SetupScreen() {
     <form class="gate-card" onSubmit=${submit}>
       <span class="brand-mark" style="width:44px;height:44px;border-radius:12px"><${Icon} n="send" s=${20} /></span>
       <h1>Create the admin account</h1>
-      <p class="soft">The desk now uses personal logins. Create the first admin account, then add your team in Settings → Users & access.</p>
+      <p class="soft">The desk now uses personal logins. Create the first admin account, then add your team in Team & access.</p>
       <label class="field"><span>Setup code <span class="hint">the old team passcode</span></span>
         <input id="setup-code" class="input" type="password" autocomplete="off" data-autofocus autofocus value=${v.code} onInput=${set('code')} /></label>
       <label class="field"><span>Your name</span><input id="setup-name" class="input" autocomplete="name" value=${v.name} onInput=${set('name')} /></label>
@@ -337,6 +338,7 @@ function App() {
   else if (UI.view === 'activity') view = html`<${ActivityView} />`;
   else if (UI.view === 'reports') view = html`<${ReportsView} />`;
   else if (UI.view === 'settings') view = html`<${SettingsView} />`;
+  else if (UI.view === 'users') view = html`<${UsersView} />`;
   else view = html`<${TodayView} />`;
   const modal = !loading && UI.modal && MODALS[UI.modal.type];
   return html`<div class="shell">

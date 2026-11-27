@@ -706,7 +706,7 @@ function UsersPanel() {
   const remove = u => UI.open('confirm', { title: 'Delete ' + u.name + '?', danger: true, confirmLabel: 'Delete user', body: 'They can no longer sign in. Their past activity stays in the history. To pause access instead, turn the account off.',
     onConfirm: async () => { const r = await api('DELETE', 'users/' + u.id); if (!r.ok) { UI.toast(authError(r), { bad: true }); return; } await loadUsers(); UI.toast(u.name + ' was deleted.'); } });
   return html`<section class="panel">
-    <div class="panel-head"><h3>Users & access</h3><button type="button" class="btn sm primary" onClick=${() => UI.open('user', {})}><${Icon} n="plus" s=${14} />Add user</button></div>
+    <div class="panel-head"><h3>Users</h3><span class="mono muted">${(Users.list || []).length}</span></div>
     <div class="panel-pad stack">
       <p class="soft" style="font-size:13px">Everyone signs in with their own email and password. Their role decides what they can change, and client access decides which clients they can see at all.</p>
       ${Users.error && html`<div class="note-box bad">${Users.error}</div>`}
@@ -806,6 +806,51 @@ function UserModal({ u }) {
   <//>`;
 }
 
+/* What each role may do, shown on Team & access. */
+const PERMISSION_ROWS = [
+  ['See prospects, activity and reports', 1, 1, 1, 1],
+  ['Work Today and Focus run, log invites, messages and replies', 1, 1, 1, 0],
+  ['Add and import prospects, edit their details', 1, 1, 1, 0],
+  ['Delete prospects', 1, 1, 0, 0],
+  ['Add and edit clients, LinkedIn accounts and lists', 1, 1, 0, 0],
+  ['Create and edit sequences and messages', 1, 1, 0, 0],
+  ['Workspace settings: pacing, schedule, team list', 1, 0, 0, 0],
+  ['Add users, set roles and client access, reset passwords', 1, 0, 0, 0],
+];
+function UsersView() {
+  if (!Store.user || !can('users')) {
+    return html`<div class="page"><div class="panel"><${Empty} icon="lock" title="Admins only">Ask an admin to change users, roles or client access.</${Empty}></div></div>`;
+  }
+  const n = (Users.list || []).filter(u => u.active).length;
+  return html`<div class="page">
+    <header class="page-head">
+      <div><p class="eyebrow">${Users.list ? plural(n, 'active user') : 'Admins only'}</p><h1>Team & access</h1>
+        <p class="lede">Who can sign in, what their role lets them do, and which clients they can see.</p></div>
+      <div class="head-actions"><button type="button" class="btn primary" onClick=${() => UI.open('user', {})}><${Icon} n="plus" s=${14} />Add user</button></div>
+    </header>
+    <div class="settings-grid">
+      <div class="stack-lg">
+        <${UsersPanel} />
+      </div>
+      <div class="stack-lg">
+        <section class="panel">
+          <div class="panel-head"><h3>Account managers & team</h3><span class="muted" style="font-size:12.5px">Names used on activity and account assignments</span></div>
+          <div class="panel-pad stack"><${PeopleEditor} />
+            <span class="hint">Each user is linked to a name here, so the activity they log is signed with it. New users get one automatically.</span></div>
+        </section>
+      </div>
+    </div>
+    <section class="panel">
+          <div class="panel-head"><h3>Roles & permissions</h3><span class="muted" style="font-size:12.5px">Checked by the server on every change</span></div>
+          <div class="table-wrap"><table class="data perm-table">
+            <thead><tr><th>Can…</th>${Object.keys(ROLE_INFO).map(k => html`<th key=${k} class="n">${ROLE_INFO[k].label}</th>`)}</tr></thead>
+            <tbody>${PERMISSION_ROWS.map(r => html`<tr key=${r[0]}><td>${r[0]}</td>${r.slice(1).map((v, i) => html`<td key=${i} class="n">${v ? html`<span class="perm-yes" aria-label="Yes"><${Icon} n="check" s=${14} /></span>` : html`<span class="muted" aria-label="No">–</span>`}</td>`)}</tr>`)}</tbody>
+          </table></div>
+          <p class="panel-pad muted" style="font-size:12.5px">Client access limits Managers, Members and Viewers to the clients you choose: they don't see the other clients anywhere. Admins always see every client.</p>
+        </section>
+  </div>`;
+}
+
 function SettingsView() {
   const data = currentData();
   const s = data.settings;
@@ -824,7 +869,7 @@ function SettingsView() {
     <header class="page-head"><div><p class="eyebrow">${s.agencyName || 'Workspace'}</p><h1>Settings</h1></div><div class="head-actions"><${HelpButton} view="settings" /></div></header>
     <div class="settings-grid">
       <div class="stack-lg">
-        ${Store.user && isAdmin && html`<${UsersPanel} />`}
+        ${Store.user && isAdmin && html`<div class="note-box"><${Icon} n="shield" s=${14} /> Users, roles, permissions and the team list are in <button type="button" class="linkish" onClick=${() => UI.go('users')}>Team & access</button> in the left sidebar.</div>`}
         ${Store.user && html`<section class="panel"><div class="panel-head"><h3>Your account</h3></div>
           <div class="panel-pad stack">
             <p class="soft" style="font-size:13px"><strong>${Store.user.name}</strong> · ${Store.user.email} · ${ROLE_INFO[Store.user.role].label}${Store.user.clients ? ' · ' + accessText(Store.user, rawData()) : ''}</p>
@@ -840,15 +885,15 @@ function SettingsView() {
                 <button type="button" class="btn" disabled=${agency.trim() === (s.agencyName || '')} onClick=${() => save({ agencyName: agency.trim() })}>Save</button></div></label>
           </div>
         </section>
-        <section class="panel">
+        ${!Store.user && html`<section class="panel">
           <div class="panel-head"><h3>Account managers & team</h3><span class="muted" style="font-size:12.5px">The master list used across clients and LinkedIn accounts</span></div>
           <div class="panel-pad stack">
             <${PeopleEditor} />
-            ${!Store.user && html`<label class="field"><span>On this device, I am</span>
+            <label class="field"><span>On this device, I am</span>
               <${MemberSelect} id="set-me" settings=${s} value=${UI.me} noneLabel="Not set" onChange=${x => { pref('me', x || null); UI.set({ me: x }); }} />
-              <span class="hint">Signs the activity you log, and lets you filter Today to your accounts.</span></label>`}
+              <span class="hint">Signs the activity you log, and lets you filter Today to your accounts.</span></label>
           </div>
-        </section>
+        </section>`}
         <section class="panel">
           <div class="panel-head"><h3>Pause between sends</h3><span class="muted" style="font-size:12.5px">Keeps each LinkedIn account human-paced</span></div>
           <div class="panel-pad stack">
