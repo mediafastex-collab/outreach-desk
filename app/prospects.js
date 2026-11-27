@@ -46,7 +46,7 @@ function ProspectsView() {
     (!f.sequenceId || p.sequenceId === f.sequenceId) && (!f.tag || (p.tags || []).indexOf(f.tag) !== -1) &&
     (!f.potential || (f.potential === '_none' ? !p.potential : p.potential === f.potential)) &&
     (!f.country || (p.country || '') === f.country) && (!f.needs || needsDetails(p)) &&
-    (!f.clientId || !f.listId || (f.listId === '_none' ? !p.listId : p.listId === f.listId)) &&
+    (!f.clientId || !f.listId || (f.listId === '_none' ? !listIdOf(client, p) : p.listId === f.listId)) &&
     (!q || haystack(p).indexOf(q) !== -1)), [data, f.clientId, f.senderId, f.sequenceId, f.tag, f.listId, f.potential, f.country, f.needs, q, af.period, af.from, af.to, TODAY]);
   const lists = client ? listsOf(data, client.id) : [];
   const listCounts = useMemo(() => {

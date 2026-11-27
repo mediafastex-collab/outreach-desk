@@ -4,6 +4,8 @@
 'use strict';
 
 /* ---------- basics ---------- */
+/* The prospect's list id, or '' when unlisted or its list was deleted. */
+function listIdOf(client, p) { return p.listId && client && (client.lists || []).some(l => l.id === p.listId) ? p.listId : ''; }
 function clone(o) { return o == null ? o : JSON.parse(JSON.stringify(o)); }
 function nowTs() { return new Date().toISOString(); }
 function uid(prefix) {
@@ -981,7 +983,7 @@ function buildBoard(data, opts) {
     const client = data.clients[p.clientId];
     if (!client) continue;
     if (opts.clientId && p.clientId !== opts.clientId) continue;
-    if (opts.listId && (p.listId || '') !== (opts.listId === '_none' ? '' : opts.listId)) continue;
+    if (opts.listId && listIdOf(client, p) !== (opts.listId === '_none' ? '' : opts.listId)) continue;
     const sender = senderOf(client, p);
     if (opts.operatorId && operatorOf(client, sender) !== opts.operatorId) continue;
     if (opts.added && !inPeriod(addedOnOf(p), opts.added)) continue;
