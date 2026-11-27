@@ -95,7 +95,8 @@ function ReportsView() {
   const f = UI.reportFilter;
   const setF = patch => UI.set({ reportFilter: Object.assign({}, f, patch) });
   const range = periodRange(f.period, TODAY, f);
-  const ps = useMemo(() => data.prospects.filter(p => !f.clientId || p.clientId === f.clientId), [data, f.clientId]);
+  const rl = f.clientId ? f.listId || '' : '';
+  const ps = useMemo(() => data.prospects.filter(p => (!f.clientId || p.clientId === f.clientId) && (!rl || (rl === '_none' ? !p.listId : p.listId === rl))), [data, f.clientId, rl]);
   const a = useMemo(() => analyze(ps, range), [ps, f.period, f.from, f.to, TODAY]);
   const series = useMemo(() => dailySeries(a, range, TODAY), [a]);
   const sc = useMemo(() => statusCounts(ps), [ps]);
@@ -111,7 +112,7 @@ function ReportsView() {
   const funnel = [['Invites sent', a.funnel.invited], ['Accepted', a.funnel.accepted], ['Replied', a.funnel.replied], ['Positive', a.funnel.positive], ['Meeting booked', a.funnel.meeting]];
   const members = Object.entries(a.members).map(([id, m]) => ({ id, name: id === '_' ? 'Not signed' : memberName(data.settings, id) || 'Former teammate', m })).sort((x, y) => (y.m.invites + y.m.messages) - (x.m.invites + x.m.messages));
   const kpi = (k, v, s) => html`<div class="panel kpi"><span class="k">${k}</span><span class="v">${fmtNum(v)}</span>${s && html`<span class="s">${s}</span>`}</div>`;
-  const title = client ? client.name : (data.settings.agencyName || 'All clients');
+  const title = (client ? client.name : (data.settings.agencyName || 'All clients')) + (rl ? ' · ' + listLabel(data, f.clientId, rl) : '');
   return html`<div class="page">
     <header class="page-head">
       <div><p class="eyebrow">${range.label}${range.from && f.period !== 'custom' && f.period !== 'today' ? ' · ' + fmtShort(range.from) + ' to ' + fmtShort(range.to) : ''}</p><h1>Reports</h1>
@@ -120,7 +121,8 @@ function ReportsView() {
     </header>
     <div class="toolbar">
       <${PeriodFilter} id="r-period" value=${f} onChange=${v => setF(v)} title="Period the report covers" />
-      ${!UI.scope && html`<${ClientSelect} id="r-client" cls="select sm" data=${data} value=${f.clientId} all=${true} includeInactive=${true} onChange=${v => setF({ clientId: v })} />`}
+      ${!UI.scope && html`<${ClientSelect} id="r-client" cls="select sm" data=${data} value=${f.clientId} all=${true} includeInactive=${true} onChange=${v => setF({ clientId: v, listId: '' })} />`}
+      <${ClientListSelect} id="r-list" data=${data} clientId=${UI.scope || f.clientId} listId=${rl} onChange=${(c, l) => setF({ clientId: UI.scope || c, listId: l })} />
     </div>
     <div class="kpis">
       ${kpi('Invites sent', a.k.invites, a.funnel.invited ? fmtPct(a.acceptRate) + ' accepted so far' : 'No invites in this period')}

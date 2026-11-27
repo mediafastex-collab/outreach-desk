@@ -17,7 +17,7 @@ const UI = {
   prospectFilter: { q: '', clientId: '', senderId: '', status: '', sequenceId: '', tag: '', sort: 'next', listId: '', potential: '', country: '', needs: false },
   activityFilter: { period: '7d', from: '', to: '', clientId: '', listId: '', memberId: '', kind: '', q: '' },
   seqScope: '',
-  reportFilter: { clientId: '', period: 'month', from: '', to: '' },
+  reportFilter: { clientId: '', listId: '', period: 'month', from: '', to: '' },
   /* Shared by Today, Focus run and Prospects: only people added in this period. */
   addedFilter: { period: 'all', from: '', to: '' },
   seqSelected: null,
@@ -577,6 +577,21 @@ function SequenceSelect({ value, onChange, data, clientId, id, cls, allowEmpty }
 }
 function listsOf(data, clientId) { const c = data.clients[clientId]; return (c && Array.isArray(c.lists) ? c.lists : []).slice().sort((a, b) => byText(a.name, b.name)); }
 function listName(data, clientId, listId) { const l = listsOf(data, clientId).find(x => x.id === listId); return l ? l.name : ''; }
+/* Pick one list from any client (or only the given client's): "All lists", then each client's lists and "Not in a list". */
+function ClientListSelect({ id, data, clientId, listId, onChange, cls }) {
+  const clients = Object.values(data.clients).filter(c => c.status !== 'archived' && (c.lists || []).length && (!clientId || c.id === clientId)).sort((a, b) => byText(a.name, b.name));
+  if (!clients.length) return null;
+  const val = listId ? (clientId || '') + '|' + listId : '';
+  return html`<select id=${id} class=${cls || 'select sm'} value=${val} aria-label="List" onChange=${e => { const v = e.target.value; if (!v) onChange(clientId || '', ''); else { const i = v.indexOf('|'); onChange(v.slice(0, i), v.slice(i + 1)); } }}>
+    <option value="" selected=${!val}>All lists</option>
+    ${clients.map(c => html`<optgroup key=${c.id} label=${c.name}>
+      ${listsOf(data, c.id).map(l => html`<option key=${l.id} value=${c.id + '|' + l.id} selected=${val === c.id + '|' + l.id}>${l.name}</option>`)}
+      <option value=${c.id + '|_none'} selected=${val === c.id + '|_none'}>Not in a list</option>
+    </optgroup>`)}
+  </select>`;
+}
+function listLabel(data, clientId, listId) { return listId === '_none' ? 'Not in a list' : (listName(data, clientId, listId) || 'List'); }
+
 function ListSelect({ value, onChange, data, clientId, id, cls, allLabel, allowNew }) {
   const lists = listsOf(data, clientId);
   return html`<select id=${id} class=${cls || 'select'} value=${value || ''} onChange=${e => onChange(e.target.value)}>

@@ -366,8 +366,10 @@ function SequenceEditor({ seq, data }) {
   }
   return editorBody();
   function editorBody() {
+  const usedBy = Object.values(data.clients).flatMap(c => (c.lists || []).filter(l => l.sequenceId === seq.id).map(l => c.name + ' · ' + l.name));
   return html`<div class="stack-lg">
     <div class="panel panel-pad stack">
+      <p class="muted" style="font-size:12.5px"><${Icon} n="list" s=${13} /> ${usedBy.length ? 'Lists using this sequence: ' + usedBy.join(', ') + '.' : 'No list uses this sequence yet. Pick it for a list in Clients → Lists, or Prospects → Manage lists.'}</p>
       <div class="seq-summary">
         <div><span class="k">Steps</span><span class="v">${d.steps.length}</span></div>
         <div><span class="k">Messages</span><span class="v">${d.steps.filter(x => groupOf(x.type) === 'message').length}</span></div>

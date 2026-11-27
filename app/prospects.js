@@ -827,6 +827,7 @@ function SetListModal({ ps }) {
   const [val, setVal] = useState(list.length === 1 ? (list[0].listId || '') : '');
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
+  const [follow, setFollow] = useState(true);
   if (clientIds.length > 1) {
     return html`<${Modal} title="Add to a list" size="narrow" foot=${html`<button type="button" class="btn primary" onClick=${() => UI.close()}>OK</button>`}>
       <p class="soft">Lists belong to one client. Your selection spans ${plural(clientIds.length, 'client')}; filter Prospects by one client, then try again.</p><//>`;
@@ -838,10 +839,15 @@ function SetListModal({ ps }) {
     UI.close();
     if (list.length === 1) await Act.setList(list[0], id, nm);
     else await Act.bulk(list, p => actSetList(p, id, nm, TODAY, me()), n => plural(n, 'prospect') + (id ? ' added to ' + nm : ' removed from their list') + '.');
+    if (follow && lseq && switching.length) await moveToSequence(switching.map(fresh), lseq);
   };
+  const target = val && val !== '__new' ? listsOf(data, cid).find(l => l.id === val) : null;
+  const lseq = target && target.sequenceId ? data.seqs[target.sequenceId] : null;
+  const switching = lseq ? list.filter(p => p.sequenceId !== lseq.id) : [];
   return html`<${Modal} title=${list.length === 1 ? 'List for ' + fullName(list[0]) : 'Add ' + plural(list.length, 'prospect') + ' to a list'} sub=${(data.clients[cid] || {}).name} size="narrow"
     foot=${html`<button type="button" class="btn" onClick=${() => UI.close()}>Cancel</button><button type="button" class="btn primary" disabled=${busy || (val === '__new' && !name.trim())} onClick=${apply}>Save</button>`}>
     <label class="field"><span>List</span><${ListSelect} id="sl-list" data=${data} clientId=${cid} value=${val} allLabel="Not in a list" allowNew=${true} onChange=${setVal} /></label>
+    ${lseq && switching.length > 0 && html`<label class="check" style="margin-top:6px"><input id="sl-follow" type="checkbox" checked=${follow} onChange=${e => setFollow(e.target.checked)} />Also move ${list.length === 1 ? 'them' : plural(switching.length, 'person', 'people')} to this list's sequence, <strong>${lseq.name}</strong> (progress is kept)</label>`}
     ${val === '__new' && html`<label class="field"><span>New list name</span><input id="sl-name" class="input" data-autofocus placeholder="e.g. Fintech CFOs, London" value=${name} onInput=${e => setName(e.target.value)} /></label>`}
   <//>`;
 }
@@ -862,27 +868,40 @@ function ListsModal({ clientId }) {
     setBusy(true);
     const kept = rows.filter(r => String(r.name || '').trim()).map(r => Object.assign({}, r, { name: r.name.trim() }));
     const removed = (client.lists || []).filter(l => !kept.some(k => k.id === l.id)).map(l => l.id);
+    const before = {}; (client.lists || []).forEach(l => { before[l.id] = l.sequenceId || null; });
+    const changed = kept.filter(r => r.sequenceId && before[r.id] !== undefined && before[r.id] !== r.sequenceId && data.seqs[r.sequenceId])
+      .map(r => ({ r, seq: data.seqs[r.sequenceId], ps: data.prospects.filter(p => p.clientId === clientId && p.listId === r.id && p.sequenceId !== r.sequenceId) }))
+      .filter(x => x.ps.length);
     const ok = await W.saveClient(Object.assign(clone(client), { lists: kept, updatedAt: nowTs() }));
     if (ok && removed.length) {
       const orphans = data.prospects.filter(p => p.clientId === clientId && removed.indexOf(p.listId) !== -1);
       await W.many(orphans, p => W.put(prospectPath(p), Object.assign(clone(p), { listId: null }), true));
     }
     setBusy(false);
-    if (ok) { UI.close(); UI.toast('Lists saved for ' + client.name + '.'); }
+    if (ok) {
+      UI.close();
+      UI.toast('Lists saved for ' + client.name + '.');
+      if (changed.length) UI.open('confirm', {
+        title: 'Move ' + plural(changed.reduce((n, x) => n + x.ps.length, 0), 'person', 'people') + ' to the new sequence?',
+        body: changed.map(x => '“' + x.r.name + '”: ' + plural(x.ps.length, 'person', 'people') + ' → ' + x.seq.name).join('. ') + '. Everyone keeps their progress: people already invited aren\'t invited again, and the next message is the next one in the new sequence. If you skip this, only people added to the list from now on use the new sequence.',
+        confirmLabel: 'Move them',
+        onConfirm: async () => { for (const x of changed) await moveToSequence(x.ps.map(fresh), x.seq); },
+      });
+    }
   };
-  return html`<${Modal} title=${'Lists · ' + client.name} sub="Group this client's prospects by campaign, segment or source. A list can start everyone added to it on its own sequence." size="wide"
+  return html`<${Modal} title=${'Lists · ' + client.name} sub="Group this client's prospects by campaign, segment or source. Each list can have its own sequence: people in it follow that sequence, and Today and Focus run can be worked one list at a time." size="wide"
     foot=${html`<button type="button" class="btn" onClick=${() => UI.close()}>Cancel</button><button type="button" class="btn primary" disabled=${busy} onClick=${save}>Save lists</button>`}>
     ${rows.length === 0 ? html`<p class="muted">No lists yet. Create the first one below.</p>` : html`<div class="stack">
       ${rows.map((r, i) => html`<div class="list-edit" key=${r.id}>
         <label class="field"><span>Name</span><input id=${'le-n-' + i} class="input sm" value=${r.name} onInput=${e => set(i, 'name', e.target.value)} /></label>
-        <label class="field"><span>Default sequence</span><${SequenceSelect} id=${'le-s-' + i} cls="select sm" data=${data} clientId=${clientId} value=${r.sequenceId || ''} allowEmpty="Client default" onChange=${v => set(i, 'sequenceId', v || null)} /></label>
+        <label class="field"><span>Sequence</span><${SequenceSelect} id=${'le-s-' + i} cls="select sm" data=${data} clientId=${clientId} value=${r.sequenceId || ''} allowEmpty="Client default" onChange=${v => set(i, 'sequenceId', v || null)} /></label>
         <span class="mono muted" style="align-self:end;padding-bottom:7px">${plural(count(r.id), 'prospect')}</span>
         <button type="button" class="btn sm ghost icon" style="align-self:end" aria-label=${'Delete list ' + r.name} title="Delete list (prospects stay, just unlisted)" onClick=${() => setRows(rows.filter((x, j) => j !== i))}><${Icon} n="trash" s=${14} /></button>
       </div>`)}
     </div>`}
     <form class="list-edit add" onSubmit=${add}>
       <label class="field"><span>New list</span><input id="le-new" class="input sm" data-autofocus placeholder="e.g. Series A founders" value=${name} onInput=${e => setName(e.target.value)} /></label>
-      <label class="field"><span>Default sequence</span><${SequenceSelect} id="le-new-s" cls="select sm" data=${data} clientId=${clientId} value=${seqId} allowEmpty="Client default" onChange=${setSeqId} /></label>
+      <label class="field"><span>Sequence</span><${SequenceSelect} id="le-new-s" cls="select sm" data=${data} clientId=${clientId} value=${seqId} allowEmpty="Client default" onChange=${setSeqId} /></label>
       <span></span>
       <button type="submit" class="btn sm" style="align-self:end" disabled=${!name.trim()}><${Icon} n="plus" s=${14} />Add</button>
     </form>

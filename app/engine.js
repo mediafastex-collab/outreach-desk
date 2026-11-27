@@ -617,6 +617,18 @@ function actChangeSequence(p, seq, startIdx, on, by) {
   q.log.push(entry('sequence', on, by, { note: 'Moved to "' + seq.name + '" at step ' + (idx + 1) + (skipped ? ' (already invited, so the invite step was skipped)' : '') }));
   return withId(touch(q), p);
 }
+/* Where someone continues in another sequence: the same point in their journey (not invited yet → start; invited → after
+   the invite; messages sent → the next message number). Closed statuses keep their status. */
+function startIndexFor(p, seq) {
+  const steps = (seq && seq.steps) || [];
+  const c = connectIndex(seq);
+  if (!p.invitedOn && !p.acceptedOn && !p.alreadyConnected) return 0;
+  const sent = (p.log || []).filter(e => e.kind === 'step' && groupOf(e.stepType) === 'message').length;
+  const msgIdx = steps.map((s, i) => (s.type === 'message' ? i : -1)).filter(i => i >= 0);
+  if (!sent) return c !== -1 ? c + 1 : (msgIdx[0] != null ? msgIdx[0] : 0);
+  return sent < msgIdx.length ? msgIdx[sent] : steps.length;
+}
+async function moveToSequence(ps, seq) { return Act.bulk(ps, p => actChangeSequence(p, seq, startIndexFor(p, seq), TODAY, me()), n => plural(n, 'prospect') + ' moved to ' + seq.name + ', keeping their progress.'); }
 function actSetReminder(p, date, note, on, by, time) {
   const q = prep(p);
   q.followUpOn = date;

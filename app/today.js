@@ -118,6 +118,12 @@ function AccountGroup({ a, tasks }) {
   const u = a.usage;
   const dLim = s ? parseInt(s.dailyInvites, 10) || 0 : 0;
   const wLim = s ? parseInt(s.weeklyInvites, 10) || 0 : 0;
+  const listChips = useMemo(() => {
+    if (!(a.client.lists || []).length) return [];
+    const m = {};
+    tasks.forEach(x => { const k = x.p.listId && (a.client.lists || []).some(l => l.id === x.p.listId) ? x.p.listId : '_none'; m[k] = (m[k] || 0) + 1; });
+    return Object.entries(m).sort((x, y) => y[1] - x[1]);
+  }, [tasks, a.client]);
   return html`<section class="panel acct" aria-label=${(s ? s.name : 'No account') + ', ' + a.client.name}>
     <header class="acct-head">
       <div class="acct-title">
@@ -131,8 +137,12 @@ function AccountGroup({ a, tasks }) {
         <span class="num">${plural(u.messagesToday, 'message')} today</span>
       </div>
       ${cooldownLeft(a.key) > 0 && html`<${Countdown} secs=${cooldownLeft(a.key)} total=${cooldownTotal(a.key)} />`}
-      <button type="button" class="btn sm" onClick=${() => UI.open('run', { key: a.key })}><${Icon} n="zap" s=${14} />Focus run</button>
+      <button type="button" class="btn sm" onClick=${() => UI.open('run', { key: a.key })}><${Icon} n="zap" s=${14} />Focus run${UI.todayFilter.listId && UI.todayFilter.clientId === a.client.id ? ' · ' + listLabel(data, a.client.id, UI.todayFilter.listId) : ''}</button>
     </header>
+    ${!UI.todayFilter.listId && listChips.length > 0 && (a.client.lists || []).length > 1 && html`<div class="acct-lists" role="group" aria-label="Work one list">
+      <span class="label"><${Icon} n="list" s=${13} />Lists</span>
+      ${listChips.map(([lid, n]) => html`<button type="button" key=${lid} onClick=${() => UI.set({ todayFilter: Object.assign({}, UI.todayFilter, { clientId: a.client.id, listId: lid }) })} title="Show only this list here and in Focus run">${listLabel(data, a.client.id, lid)}<span class="n">${n}</span></button>`)}
+    </div>`}
     ${tasks.slice(0, limit).map(x => html`<${TaskRow} key=${x.key} task=${x} />`)}
     <${ShowMore} shown=${limit} total=${tasks.length} step=${50} onMore=${() => setLimit(limit + 50)} />
     ${a.overLimit.length > 0 && html`<div class="overflow-note"><${Icon} n="info" s=${14} />
@@ -376,6 +386,7 @@ function TodayView() {
         <p class="eyebrow">${fmtLong(TODAY)}</p>
         <h1>Today</h1>
         <p class="lede">${todo === 0 ? 'Nothing left to do right now.' : plural(todo, 'thing') + ' to do' + (c.overdue ? ', ' + c.overdue + ' overdue' : '')}${c.pending ? ' · ' + plural(c.pending, 'invite') + ' waiting for acceptance' : ''}.</p>
+        ${f.clientId && f.listId && html`<p class="filter-note"><${Icon} n="list" s=${13} />Only list <strong>${listLabel(data, f.clientId, f.listId)}</strong> (${(data.clients[f.clientId] || {}).name}). Focus run follows it. <button type="button" class="linkish" onClick=${() => setF({ listId: '' })}>Show all lists</button></p>`}
         ${added && html`<p class="filter-note"><${Icon} n="calendar" s=${13} />Only people added ${addedText(af, added)}. <button type="button" class="linkish" onClick=${() => UI.set({ addedFilter: { period: 'all', from: '', to: '' } })}>Show everyone</button></p>`}
       </div>
       <div class="head-actions">
@@ -408,7 +419,7 @@ function TodayView() {
 
     <div class="toolbar">
       ${!UI.scope && html`<${ClientSelect} id="today-client" cls="select sm" data=${data} value=${f.clientId} all=${true} onChange=${v => setF({ clientId: v, listId: '' })} />`}
-      ${f.clientId && listsOf(data, f.clientId).length > 0 && html`<${ListSelect} id="today-list" cls="select sm" data=${data} clientId=${f.clientId} value=${f.listId} allLabel="All lists" onChange=${v => setF({ listId: v })} />`}
+      <${ClientListSelect} id="today-list" data=${data} clientId=${UI.scope || f.clientId} listId=${f.listId} onChange=${(c, l) => setF({ clientId: UI.scope || c, listId: l })} />
       <${MemberSelect} id="today-member" cls="select sm" settings=${data.settings} value=${f.operatorId} all=${true} allLabel="All team members" onChange=${v => setF({ operatorId: v })} />
       <${SearchBox} id="today-search" value=${f.q} placeholder="Search name or company…" onInput=${v => setF({ q: v })} />
       <${PeriodFilter} id="today-added" prefix="Added" allLabel="Any time" value=${af} onChange=${v => UI.set({ addedFilter: v })} title="Only people added to the desk in this period (for imports: the date in the sheet)" />
@@ -557,8 +568,9 @@ function RunModal({ accountKey }) {
   const af = UI.addedFilter;
   const added = addedRange(af, TODAY);
   const rq = needleOf(UI.todayFilter.q);
-  const runSub = [added ? 'Only people added ' + addedText(af, added) : '', rq ? 'Only names matching “' + String(UI.todayFilter.q).trim() + '”' : ''].filter(Boolean).join(' · ') || undefined;
-  const board = useMemo(() => buildBoard(data, { today: TODAY, clientId: accountKey ? '' : UI.todayFilter.clientId, operatorId: accountKey ? '' : UI.todayFilter.operatorId, added, q: rq }), [data, TODAY, af.period, af.from, af.to, rq]);
+  const rl = UI.todayFilter.clientId ? UI.todayFilter.listId || '' : '';
+  const runSub = [rl ? 'List: ' + listLabel(data, UI.todayFilter.clientId, rl) : '', added ? 'Only people added ' + addedText(af, added) : '', rq ? 'Only names matching “' + String(UI.todayFilter.q).trim() + '”' : ''].filter(Boolean).join(' · ') || undefined;
+  const board = useMemo(() => buildBoard(data, { today: TODAY, clientId: accountKey && !rl ? '' : UI.todayFilter.clientId, operatorId: accountKey ? '' : UI.todayFilter.operatorId, listId: rl, added, q: rq }), [data, TODAY, af.period, af.from, af.to, rq, rl]);
   const [skipped, setSkipped] = useState(() => new Set());
   const [doneKeys, setDoneKeys] = useState(() => new Set());
   const [count, setCount] = useState(0);
