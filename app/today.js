@@ -137,7 +137,7 @@ function AccountGroup({ a, tasks }) {
         <span class="num">${plural(u.messagesToday, 'message')} today</span>
       </div>
       ${cooldownLeft(a.key) > 0 && html`<${Countdown} secs=${cooldownLeft(a.key)} total=${cooldownTotal(a.key)} />`}
-      <button type="button" class="btn sm" onClick=${() => UI.open('run', { key: a.key })}><${Icon} n="zap" s=${14} />Focus run${UI.todayFilter.listId && UI.todayFilter.clientId === a.client.id ? ' · ' + listLabel(data, a.client.id, UI.todayFilter.listId) : ''}</button>
+      <button type="button" class="btn sm run-cta-sm" onClick=${() => UI.open('run', { key: a.key })}><${Icon} n="zap" s=${14} />Focus run${UI.todayFilter.listId && UI.todayFilter.clientId === a.client.id ? ' · ' + listLabel(data, a.client.id, UI.todayFilter.listId) : ''}</button>
     </header>
     ${!UI.todayFilter.listId && listChips.length > 0 && (a.client.lists || []).length > 1 && html`<div class="acct-lists" role="group" aria-label="Work one list">
       <span class="label"><${Icon} n="list" s=${13} />Lists</span>
@@ -395,7 +395,7 @@ function TodayView() {
       <div class="head-actions">
         <${HelpButton} view="today" />
         <button type="button" class="btn" onClick=${() => copyText(planText(board, data), "Today's plan")}><${Icon} n="copy" s=${14} />Copy plan</button>
-        <button type="button" class="btn primary" disabled=${todo === 0} onClick=${() => UI.open('run', { key: '' })}><${Icon} n="zap" s=${14} />Focus run</button>
+        <button type="button" class="btn run-cta" disabled=${todo === 0} onClick=${() => UI.open('run', { key: '' })}><${Icon} n="zap" s=${15} />Start Focus run</button>
       </div>
     </header>
 
@@ -583,11 +583,12 @@ function RunModal({ accountKey }) {
   const [count, setCount] = useState(0);
   const [busy, setBusy] = useState(false);
   const [draft, setDraft] = useState('');
+  const [opened, setOpened] = useState(false);
   const accs = accountKey ? board.accounts.filter(a => a.key === accountKey) : board.accounts;
   const queue = accs.flatMap(a => a.tasks).filter(x => !skipped.has(x.key) && !doneKeys.has(x.key));
   const task = queue[0];
   const text = task && task.kind === 'step' ? String(task.text || '') : '';
-  useEffect(() => { setDraft(text); }, [task ? task.key : '']);
+  useEffect(() => { setDraft(text); setOpened(false); }, [task ? task.key : '']);
   const title = accountKey && accs[0] ? 'Focus run · ' + (accs[0].sender ? accs[0].sender.name : accs[0].client.name) : 'Focus run';
   const act = fn => async () => {
     if (busy || !task) return;
@@ -605,12 +606,18 @@ function RunModal({ accountKey }) {
   const p = task.p;
   const isStep = task.kind === 'step';
   const wait = isStep ? cooldownLeft(acctKeyOf(p)) : 0;
+  const markDone = act(() => task.kind === 'reminder' ? Act.reminderDone(fresh(p)) : Act.done(fresh(p)));
+  const step2 = html`<div class=${'run-step' + (opened ? ' on' : '')}>
+      <span class="run-step-n">2</span>
+      <div class="run-step-body"><strong>Back here? Mark it done</strong><span class="muted">${opened ? 'Sent it on LinkedIn? Click below and the next person opens.' : 'After you send it on LinkedIn, come back and click this.'}</span>
+        <button type="button" class=${'btn ' + (opened ? 'primary' : '') + ' run-next'} disabled=${busy || wait > 0} onClick=${markDone}><${Icon} n="check" s=${15} />${wait > 0 ? 'Wait ' + wait + 's' : doneLabel(task) + ' · next person'}</button></div>
+    </div>`;
   return html`<${Modal} title=${title} sub=${runSub} size="wide" foot=${html`
       <span class="left run-progress">${count} done · ${queue.length} to go</span>
       <button type="button" class="btn" disabled=${busy} onClick=${() => UI.open('reply', { p: fresh(p), back: { type: 'run', props: { key: accountKey } } })}><${Icon} n="reply" s=${14} />They replied</button>
       ${isStep && html`<button type="button" class="btn" disabled=${busy} onClick=${act(() => Act.snooze(fresh(p), addDays(TODAY, 1)))}><${Icon} n="clock" s=${14} />Tomorrow</button>`}
       <button type="button" class="btn" disabled=${busy} onClick=${skip}><${Icon} n="skip" s=${14} />Later</button>
-      <button type="button" class="btn primary" disabled=${busy || wait > 0} onClick=${act(() => task.kind === 'reminder' ? Act.reminderDone(fresh(p)) : Act.done(fresh(p)))}><${Icon} n="check" s=${14} />${wait > 0 ? 'Wait ' + wait + 's' : doneLabel(task) + ' · next'}</button>`}>
+`}>
     <div class="run-card">
       <div>
         <div class="task-meta" style="margin-bottom:8px"><${ClientChip} client=${task.client} /><span class="task-step">${task.sender ? task.sender.name : ''}</span></div>
@@ -630,14 +637,24 @@ function RunModal({ accountKey }) {
         <label class="field"><span>Message <span class="hint">edits here are only for this send</span></span>
           <textarea id="run-draft" class="textarea run-msg" value=${draft} onInput=${e => setDraft(e.target.value)}></textarea></label>
         ${placeholders(draft) > 0 && html`<div class="note-box warn">Replace the [bracketed] placeholders before sending.</div>`}
-        <div class="btn-row">
-          ${wait > 0 ? html`<button type="button" class="btn primary" disabled><${Icon} n="clock" s=${14} />Copy & open in ${wait}s</button>`
-            : html`<a class="btn primary" href=${p.url} target="_blank" rel="noopener noreferrer" onClick=${() => copyText(draft, 'Message copied')}><${Icon} n="copy" s=${14} />Copy & open profile</a>`}
-          <button type="button" class="btn" onClick=${() => copyText(draft, 'Message copied')}><${Icon} n="copy" s=${14} />Copy only</button>
-        </div>`
+        <div class=${'run-step' + (!opened ? ' on' : ' done')}>
+          <span class="run-step-n">${opened ? html`<${Icon} n="check" s=${13} />` : '1'}</span>
+          <div class="run-step-body"><strong>Copy the message and open their profile</strong><span class="muted">Paste it on LinkedIn and send.</span>
+            <div class="btn-row">
+              ${wait > 0 ? html`<button type="button" class="btn primary" disabled><${Icon} n="clock" s=${14} />Copy & open in ${wait}s</button>`
+                : html`<a class=${'btn ' + (!opened ? 'primary' : '')} href=${p.url} target="_blank" rel="noopener noreferrer" onClick=${() => { copyText(draft, 'Message copied'); setOpened(true); }}><${Icon} n="copy" s=${14} />Copy & open profile</a>`}
+              <button type="button" class="btn" onClick=${() => { copyText(draft, 'Message copied'); setOpened(true); }}><${Icon} n="copy" s=${14} />Copy only</button>
+            </div></div>
+        </div>
+        ${step2}`
       : html`
         <div class="note-box">${isStep ? (STEP_TYPES[task.step.type] || STEP_TYPES.task).verb + '.' : (task.note || 'Follow up with ' + (p.firstName || 'them') + '.')}</div>
-        <div class="btn-row"><a class="btn primary" href=${p.url} target="_blank" rel="noopener noreferrer"><${Icon} n="external" s=${14} />Open profile</a></div>`}
+        <div class=${'run-step' + (!opened ? ' on' : ' done')}>
+          <span class="run-step-n">${opened ? html`<${Icon} n="check" s=${13} />` : '1'}</span>
+          <div class="run-step-body"><strong>Open their profile and do it</strong>
+            <div class="btn-row"><a class=${'btn ' + (!opened ? 'primary' : '')} href=${p.url} target="_blank" rel="noopener noreferrer" onClick=${() => setOpened(true)}><${Icon} n="external" s=${14} />Open profile</a></div></div>
+        </div>
+        ${step2}`}
     </div>
   <//>`;
 }

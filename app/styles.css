@@ -946,3 +946,20 @@ body { font-family: var(--font-body); -webkit-font-smoothing: antialiased; }
 .ac-head .muted { font-size: 11.5px; }
 .ac-all { font-size: 12px; gap: 4px; }
 .access-table input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--ink, #0D0D0D); }
+
+/* Focus run: highlighted start button and numbered steps */
+.btn.run-cta { background: #FF6600; color: #0D0D0D; border-color: #FF6600; font-weight: 600; box-shadow: 0 6px 18px rgba(255,102,0,.28); }
+.btn.run-cta:hover:not(:disabled) { background: #ff7a1f; border-color: #ff7a1f; }
+.btn.run-cta:disabled { background: rgba(13,13,13,.08); border-color: transparent; color: var(--muted, #63636B); box-shadow: none; }
+.btn.run-cta-sm { border-color: #FF6600; color: #0D0D0D; background: rgba(255,102,0,.08); font-weight: 600; }
+.btn.run-cta-sm:hover { background: rgba(255,102,0,.16); }
+.run-step { display: flex; gap: 12px; padding: 14px 16px; border: 1px solid rgba(13,13,13,.1); border-radius: 14px; background: #fff; opacity: .7; }
+.run-step.on { opacity: 1; border-color: #FF6600; box-shadow: 0 0 0 3px rgba(255,102,0,.12); }
+.run-step.done { opacity: .75; }
+.run-step-n { flex: none; width: 26px; height: 26px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; font-weight: 600; font-size: 13px; background: rgba(13,13,13,.08); color: #0D0D0D; }
+.run-step.on .run-step-n { background: #FF6600; color: #0D0D0D; }
+.run-step.done .run-step-n { background: var(--good, #2e7d32); color: #fff; }
+.run-step-body { display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 0; }
+.run-step-body .btn-row { margin-top: 4px; }
+.btn.run-next { align-self: flex-start; margin-top: 4px; padding: 10px 20px; font-size: 14.5px; }
+.textarea.run-msg { min-height: 110px; }
